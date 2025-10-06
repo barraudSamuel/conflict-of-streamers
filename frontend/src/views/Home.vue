@@ -1,9 +1,39 @@
 <script setup lang="ts">
+import {ref} from 'vue'
+import {useRouter} from 'vue-router'
 import {Button} from '@/components/ui/button'
 import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle} from '@/components/ui/card'
 import {Users, Zap, Crown, KeyRound, Sword, Swords, MessageCircle} from 'lucide-vue-next'
 import {Input} from "@/components/ui/input"
 import {Label} from "@/components/ui/label"
+import {createGame} from '@/services/api'
+
+const router = useRouter()
+const twitchUsername = ref('')
+const isCreating = ref(false)
+const error = ref('')
+
+async function handleCreateGame() {
+  if (!twitchUsername.value.trim()) {
+    error.value = 'Veuillez entrer votre pseudo Twitch'
+    return
+  }
+
+  try {
+    isCreating.value = true
+    error.value = ''
+    const response = await createGame(twitchUsername.value.trim())
+
+    if (response.success && response.game.id) {
+      // Redirect to the lobby with the game ID
+      await router.push(`/lobby/${response.game.id}`)
+    }
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Erreur lors de la création de la partie'
+  } finally {
+    isCreating.value = false
+  }
+}
 
 const features = [
   {
@@ -72,17 +102,29 @@ const tutorial = [
           <CardDescription>Commencez une nouvelle partie et invitez d'autres streamers à vous rejoindre.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form>
+          <form @submit.prevent="handleCreateGame">
             <div class="grid items-center w-full gap-4">
               <div class="flex flex-col space-y-2">
-                <Label for="name">Pseudo Twitch</Label>
-                <Input id="name" placeholder="Potatoz"/>
+                <Label for="create-username">Pseudo Twitch</Label>
+                <Input
+                  id="create-username"
+                  v-model="twitchUsername"
+                  placeholder="Potatoz"
+                  :disabled="isCreating"
+                />
               </div>
+              <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
             </div>
           </form>
         </CardContent>
         <CardFooter>
-          <Button class="w-full">Créer</Button>
+          <Button
+            class="w-full"
+            @click="handleCreateGame"
+            :disabled="isCreating"
+          >
+            {{ isCreating ? 'Création...' : 'Créer' }}
+          </Button>
         </CardFooter>
       </Card>
       <Card class="w-full">

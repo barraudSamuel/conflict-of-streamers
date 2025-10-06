@@ -1,0 +1,124 @@
+{
+    "territories": [
+    {
+        "id": "FR",
+        "name": "France",
+        "code": "FR",
+        "neighbors": ["ES", "IT", "CH", "DE", "BE", "GB"]
+    },
+    {
+        "id": "DE",
+        "name": "Germany",
+        "code": "DE",
+        "neighbors": ["FR", "CH", "AT", "CZ", "PL", "NL", "BE", "DK"]
+    },
+    {
+        "id": "ES",
+        "name": "Spain",
+        "code": "ES",
+        "neighbors": ["FR", "PT"]
+    },
+    {
+        "id": "IT",
+        "name": "Italy",
+        "code": "IT",
+        "neighbors": ["FR", "CH", "AT", "SI"]
+    },
+    {
+        "id": "GB",
+        "name": "United Kingdom",
+        "code": "GB",
+        "neighbors": ["FR", "IE"]
+    },
+    {
+        "id": "PL",
+        "name": "Poland",
+        "code": "PL",
+        "neighbors": ["DE", "CZ", "SK", "UA", "BY", "LT"]
+    },
+    {
+        "id": "RU",
+        "name": "Russia",
+        "code": "RU",
+        "neighbors": ["NO", "FI", "EE", "LV", "LT", "BY", "UA", "GE", "AZ", "KZ"]
+    },
+    {
+        "id": "US",
+        "name": "United States",
+        "code": "US",
+        "neighbors": ["CA", "MX"]
+    },
+    {
+        "id": "CA",
+        "name": "Canada",
+        "code": "CA",
+        "neighbors": ["US"]
+    },
+    {
+        "id": "MX",
+        "name": "Mexico",
+        "code": "MX",
+        "neighbors": ["US", "GT", "BZ"]
+    },
+    {
+        "id": "BR",
+        "name": "Brazil",
+        "code": "BR",
+        "neighbors": ["VE", "CO", "PE", "BO", "PY", "AR", "UY", "GY", "SR", "GF"]
+    },
+    {
+        "id": "AR",
+        "name": "Argentina",
+        "code": "AR",
+        "neighbors": ["CL", "BO", "PY", "BR", "UY"]
+    },
+    {
+        "id": "CN",
+        "name": "China",
+        "code": "CN",
+        "neighbors": ["MN", "RU", "KZ", "KG", "TJ", "AF", "PK", "IN", "NP", "BT", "MM", "LA", "VN", "KP"]
+    },
+    {
+        "id": "IN",
+        "name": "India",
+        "code": "IN",
+        "neighbors": ["PK", "CN", "NP", "BT", "MM", "BD"]
+    },
+    {
+        "id": "AU",
+        "name": "Australia",
+        "code": "AU",
+        "neighbors": []
+    },
+    {
+        "id": "JP",
+        "name": "Japan",
+        "code": "JP",
+        "neighbors": []
+    },
+    {
+        "id": "EG",
+        "name": "Egypt",
+        "code": "EG",
+        "neighbors": ["LY", "SD", "IL", "PS"]
+    },
+    {
+        "id": "ZA",
+        "name": "South Africa",
+        "code": "ZA",
+        "neighbors": ["NA", "BW", "ZW", "MZ", "SZ", "LS"]
+    },
+    {
+        "id": "NG",
+        "name": "Nigeria",
+        "code": "NG",
+        "neighbors": ["BJ", "NE", "TD", "CM"]
+    },
+    {
+        "id": "TR",
+        "name": "Turkey",
+        "code": "TR",
+        "neighbors": ["GR", "BG", "GE", "AM", "AZ", "IR", "IQ", "SY"]
+    }
+]
+}

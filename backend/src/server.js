@@ -2,6 +2,8 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors';
 import dotenv from 'dotenv';
 import websocket from '@fastify/websocket';
+import gameRoutes from '../routes/game.js';
+import { setupWebSocket } from '../websocket/socketHandler.js';
 
 dotenv.config();
 
@@ -14,6 +16,9 @@ await fastify.register(cors, {
 });
 
 await fastify.register(websocket);
+
+// Register game routes
+await fastify.register(gameRoutes, { prefix: '/api/game' });
 
 fastify.register(async function (fastify) {
     fastify.get('/ws', { websocket: true }, setupWebSocket);

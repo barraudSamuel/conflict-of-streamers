@@ -86,7 +86,7 @@ export function setupWebSocket(connection, req) {
                     return;
                 }
 
-                const game = GameManager.getGame(gameId);
+                const attackGame = GameManager.getGame(gameId);
                 const attack = AttackManager.startAttack(
                     gameId,
                     attackerId,
@@ -110,15 +110,15 @@ export function setupWebSocket(connection, req) {
                         });
 
                         // Annoncer les résultats dans les chats Twitch
-                        const finishedAttack = game.activeAttacks.get(toTerritory);
+                        const finishedAttack = attackGame.activeAttacks.get(toTerritory);
                         if (finishedAttack) {
-                            TwitchService.announceResults(game, finishedAttack);
+                            TwitchService.announceResults(attackGame, finishedAttack);
                         }
                     }
                 );
 
                 // Annoncer l'attaque dans les chats
-                await TwitchService.announceAttack(game, attack);
+                await TwitchService.announceAttack(attackGame, attack);
 
                 // Setup command handler pour cette partie (une seule fois)
                 if (!TwitchService.commandHandlers.has(gameId)) {
