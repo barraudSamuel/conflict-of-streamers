@@ -8,8 +8,8 @@ class GameManager {
     }
 
     createGame(adminId, twitchUsername, settings) {
-        const game = new Game(adminId, settings);
-        const admin = new Player(adminId, twitchUsername);
+        const game = new Game(adminId, twitchUsername, settings);
+        const admin = new Player(adminId, twitchUsername, null, true);
         game.addPlayer(admin);
 
         this.games.set(game.id, game);
@@ -43,7 +43,7 @@ class GameManager {
             throw new Error('Player already in another game');
         }
 
-        const player = new Player(playerId, twitchUsername);
+        const player = new Player(playerId, twitchUsername, null, false);
         game.addPlayer(player);
         this.playerToGame.set(playerId, game.id);
 

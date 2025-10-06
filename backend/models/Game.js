@@ -2,10 +2,11 @@ import { v4 as uuidv4 } from 'uuid';
 import MapService from '../services/MapService.js';
 
 export class Game {
-    constructor(adminId, settings = {}) {
+    constructor(adminId, adminTwitchUsername, settings = {}) {
         this.id = uuidv4();
         this.code = this.generateCode();
         this.adminId = adminId;
+        this.adminTwitchUsername = adminTwitchUsername;
         this.status = 'lobby'; // lobby | playing | finished
         this.settings = {
             attackDuration: settings.attackDuration || 30,
@@ -201,6 +202,7 @@ export class Game {
             id: this.id,
             code: this.code,
             adminId: this.adminId,
+            adminTwitchUsername: this.adminTwitchUsername,
             status: this.status,
             settings: this.settings,
             players: this.players,

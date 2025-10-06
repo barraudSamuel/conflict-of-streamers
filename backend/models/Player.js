@@ -1,5 +1,5 @@
 export class Player {
-    constructor(id, twitchUsername, color = null) {
+    constructor(id, twitchUsername, color = null, isAdmin = false) {
         this.id = id;
         this.twitchUsername = twitchUsername;
         this.color = color || this.generateColor();
@@ -7,6 +7,7 @@ export class Player {
         this.isReady = false;
         this.territories = [];
         this.isConnected = true;
+        this.isAdmin = isAdmin;
         this.joinedAt = Date.now();
     }
 
@@ -31,7 +32,8 @@ export class Player {
             score: this.score,
             isReady: this.isReady,
             territories: this.territories,
-            isConnected: this.isConnected
+            isConnected: this.isConnected,
+            isAdmin: this.isAdmin
         };
     }
 }

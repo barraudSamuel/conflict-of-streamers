@@ -1,0 +1,31 @@
+<svg width="800" height="400" viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="800" height="400" fill="#1e293b"/>
+
+  <!-- Simplified world map silhouette -->
+  <!-- North America -->
+  <path d="M 80 80 L 120 60 L 180 70 L 200 90 L 220 100 L 200 120 L 180 140 L 150 150 L 120 130 L 90 110 Z" fill="#64748b" stroke="#475569" stroke-width="1"/>
+
+  <!-- South America -->
+  <path d="M 180 160 L 200 180 L 210 220 L 200 260 L 180 280 L 160 270 L 150 240 L 160 200 L 170 180 Z" fill="#64748b" stroke="#475569" stroke-width="1"/>
+
+  <!-- Europe -->
+  <path d="M 380 70 L 420 65 L 450 80 L 440 100 L 410 110 L 380 100 L 370 85 Z" fill="#64748b" stroke="#475569" stroke-width="1"/>
+
+  <!-- Africa -->
+  <path d="M 380 120 L 420 130 L 440 150 L 450 180 L 440 220 L 420 240 L 400 250 L 380 240 L 370 210 L 360 180 L 370 150 Z" fill="#64748b" stroke="#475569" stroke-width="1"/>
+
+  <!-- Asia -->
+  <path d="M 460 70 L 520 60 L 580 70 L 620 90 L 640 110 L 650 140 L 630 160 L 600 170 L 560 160 L 520 140 L 480 120 L 460 100 Z" fill="#64748b" stroke="#475569" stroke-width="1"/>
+
+  <!-- Australia -->
+  <path d="M 620 240 L 660 250 L 680 270 L 670 290 L 640 295 L 610 285 L 600 270 L 610 255 Z" fill="#64748b" stroke="#475569" stroke-width="1"/>
+
+  <!-- Additional landmasses for detail -->
+  <path d="M 100 60 L 140 50 L 160 55 L 150 65 L 120 70 Z" fill="#64748b" stroke="#475569" stroke-width="1"/>
+  <path d="M 580 200 L 620 210 L 640 230 L 620 235 L 590 225 L 575 215 Z" fill="#64748b" stroke="#475569" stroke-width="1"/>
+
+  <!-- Grid lines for map feel -->
+  <line x1="400" y1="0" x2="400" y2="400" stroke="#334155" stroke-width="0.5" stroke-dasharray="5,5"/>
+  <line x1="0" y1="200" x2="800" y2="200" stroke="#334155" stroke-width="0.5" stroke-dasharray="5,5"/>
+</svg>
