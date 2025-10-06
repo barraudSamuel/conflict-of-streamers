@@ -39,8 +39,22 @@ Le jeu est un jeu de conquête de territoire via le chat Twitch. Deux streamers 
 - **Environment Configuration**: dotenv
 
 ### Frontend
-- **Framework**: Vue.js (to be implemented)
+- **Framework**: Vue.js 3.5+ with Composition API
+- **Routing**: Vue Router 4.5+
+- **UI Component Library**: VueShadcn (based on Reka UI)
+- **Styling**: Tailwind CSS 4.1+
+- **Icons**: Lucide Vue Next
+- **Build Tool**: Vite 7+
+- **Language**: TypeScript
 - **Map Visualization**: To be determined (see Map Implementation section below)
+
+#### UI/UX Guidelines
+- **Use VueShadcn components** for all UI elements (buttons, inputs, modals, etc.)
+- **Use Tailwind utility classes** exclusively for styling
+- **DO NOT create custom CSS classes** - rely on Tailwind's utility-first approach
+- Leverage `class-variance-authority` for component variants when needed
+- Use `tailwind-merge` for conditional class composition
+- Follow VueShadcn's design patterns and component structure
 
 ---
 
