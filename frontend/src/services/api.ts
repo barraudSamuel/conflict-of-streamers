@@ -89,3 +89,27 @@ export async function startGame(gameId: string, adminId: string): Promise<GameRe
 
   return response.json();
 }
+
+interface BasicSuccessResponse {
+  success: boolean;
+  message?: string;
+}
+
+export async function leaveGame(gameId: string, playerId: string): Promise<BasicSuccessResponse> {
+  const response = await fetch(`${API_URL}/api/game/${gameId}/leave`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      playerId,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to leave game');
+  }
+
+  return response.json();
+}

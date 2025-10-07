@@ -37,6 +37,13 @@ export function setupWebSocket(connection, req) {
                     }
                 }
             }
+
+            if (gameId) {
+                broadcastToGame(gameId, {
+                    type: 'player:disconnected',
+                    playerId
+                });
+            }
         }
     });
 
@@ -58,8 +65,14 @@ export function setupWebSocket(connection, req) {
                 socket.send(JSON.stringify({
                     type: 'registered',
                     playerId,
-                    gameId
+                    gameId,
+                    connectedPlayerIds: Array.from(gameConnections.get(gameId) || [])
                 }));
+
+                broadcastToGame(gameId, {
+                    type: 'player:connected',
+                    playerId
+                });
                 break;
 
             case 'game:update':
@@ -207,6 +220,94 @@ export function setupWebSocket(connection, req) {
                     });
                 }
                 break;
+
+            case 'player:kick': {
+                if (!playerId) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Player not registered'
+                    }));
+                    break;
+                }
+
+                const targetId = payload?.targetId;
+                if (!targetId) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'targetId is required'
+                    }));
+                    break;
+                }
+
+                const adminGame = GameManager.getGameByPlayerId(playerId);
+                if (!adminGame) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Game not found'
+                    }));
+                    break;
+                }
+
+                if (adminGame.adminId !== playerId) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Only the admin can remove players'
+                    }));
+                    break;
+                }
+
+                if (targetId === playerId) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Cannot remove yourself'
+                    }));
+                    break;
+                }
+
+                const targetGame = GameManager.getGameByPlayerId(targetId);
+                if (!targetGame || targetGame.id !== adminGame.id) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Target player not found in this game'
+                    }));
+                    break;
+                }
+
+                const updatedGame = GameManager.leaveGame(targetId);
+                if (!updatedGame) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Unable to remove player'
+                    }));
+                    break;
+                }
+
+                const targetSocket = connections.get(targetId);
+                if (targetSocket && targetSocket.readyState === 1) {
+                    broadcastToPlayer(targetId, {
+                        type: 'player:kick-notice',
+                        gameId: updatedGame.id
+                    });
+
+                    setTimeout(() => {
+                        if (targetSocket.readyState === 1) {
+                            targetSocket.close();
+                        }
+                    }, 50);
+                } else {
+                    broadcastToPlayer(targetId, {
+                        type: 'player:kick-notice',
+                        gameId: updatedGame.id
+                    });
+                }
+
+                broadcastToGame(updatedGame.id, {
+                    type: 'player:kicked',
+                    playerId: targetId,
+                    game: updatedGame.toJSON()
+                });
+                break;
+            }
 
             case 'ping':
                 socket.send(JSON.stringify({ type: 'pong' }));

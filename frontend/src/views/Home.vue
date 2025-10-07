@@ -14,8 +14,7 @@ import { Users, Zap, Crown, KeyRound, Sword, Swords, MessageCircle } from 'lucid
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createGame, joinGame } from '@/services/api'
-
-const PLAYER_SESSION_KEY = 'cos.player'
+import { savePlayerContext } from '@/lib/playerStorage'
 
 const router = useRouter()
 const twitchUsername = ref('')
@@ -26,16 +25,6 @@ const joinTwitchUsername = ref('')
 const joinCode = ref('')
 const isJoining = ref(false)
 const joinError = ref('')
-
-const persistPlayerContext = (context: {
-  playerId: string
-  twitchUsername: string
-  isAdmin: boolean
-  gameId: string
-  gameCode: string
-}) => {
-  sessionStorage.setItem(PLAYER_SESSION_KEY, JSON.stringify(context))
-}
 
 async function handleCreateGame() {
   if (!twitchUsername.value.trim()) {
@@ -50,7 +39,7 @@ async function handleCreateGame() {
     const response = await createGame(twitchUsername.value.trim(), adminId)
 
     if (response.success && response.game.id) {
-      persistPlayerContext({
+      savePlayerContext({
         playerId: adminId,
         twitchUsername: twitchUsername.value.trim(),
         isAdmin: true,
@@ -80,7 +69,7 @@ async function handleJoinGame() {
     const response = await joinGame(joinCode.value.trim().toUpperCase(), playerId, joinTwitchUsername.value.trim())
 
     if (response.success && response.game.id) {
-      persistPlayerContext({
+      savePlayerContext({
         playerId,
         twitchUsername: joinTwitchUsername.value.trim(),
         isAdmin: false,

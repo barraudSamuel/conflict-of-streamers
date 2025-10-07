@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useClipboard } from '@vueuse/core'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getGame, startGame as startGameRequest } from '@/services/api'
+import { getGame, startGame as startGameRequest, leaveGame as leaveGameRequest } from '@/services/api'
+import { createGameSocket, sendSocketMessage, type SocketMessage } from '@/services/socket'
+import { clearPlayerContext, loadPlayerContext, type PlayerContext } from '@/lib/playerStorage'
 import {
   Gamepad2,
   Crown,
@@ -14,18 +16,9 @@ import {
   Copy,
   LogOut,
   ListTodo,
+  OctagonMinus,
   Map
 } from 'lucide-vue-next'
-
-const PLAYER_SESSION_KEY = 'cos.player'
-
-interface PlayerContext {
-  playerId: string
-  twitchUsername: string
-  isAdmin: boolean
-  gameId: string
-  gameCode: string
-}
 
 const route = useRoute()
 const router = useRouter()
@@ -36,7 +29,191 @@ const loading = ref(true)
 const error = ref('')
 const startingGame = ref(false)
 const startError = ref('')
+const leavingGame = ref(false)
+const leaveError = ref('')
 const playerContext = ref<PlayerContext | null>(null)
+const socket = ref<WebSocket | null>(null)
+const socketError = ref('')
+const realtimeConnected = ref(false)
+const playerConnections = ref<Record<string, boolean>>({})
+const kickingPlayerId = ref<string | null>(null)
+
+let reconnectTimer: number | null = null
+let manualDisconnect = false
+
+const clearReconnectTimer = () => {
+  if (reconnectTimer !== null) {
+    window.clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+}
+
+const scheduleReconnect = () => {
+  if (manualDisconnect || reconnectTimer !== null) return
+
+  socketError.value = 'Connexion temps réel perdue. Tentative de reconnexion...'
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null
+    setupSocket()
+  }, 2000)
+}
+
+const setPlayerConnection = (playerId: string, connected: boolean) => {
+  playerConnections.value = {
+    ...playerConnections.value,
+    [playerId]: connected
+  }
+}
+
+const removePlayerConnection = (playerId: string) => {
+  const { [playerId]: _removed, ...rest } = playerConnections.value
+  playerConnections.value = rest
+}
+
+const ensurePlayerConnections = (players: any[]) => {
+  const next: Record<string, boolean> = { ...playerConnections.value }
+  const ids = new Set<string>()
+
+  players.forEach((player: any) => {
+    ids.add(player.id)
+    if (!(player.id in next)) {
+      next[player.id] = false
+    }
+  })
+
+  Object.keys(next).forEach((id) => {
+    if (!ids.has(id)) {
+      delete next[id]
+    }
+  })
+
+  playerConnections.value = next
+}
+
+const handleSocketMessage = (message: SocketMessage) => {
+  switch (message.type) {
+    case 'registered':
+      realtimeConnected.value = true
+      socketError.value = ''
+      if (Array.isArray(message.connectedPlayerIds)) {
+        const next = { ...playerConnections.value }
+        message.connectedPlayerIds.forEach((id: string) => {
+          next[id] = true
+        })
+        playerConnections.value = next
+      } else if (playerContext.value?.playerId) {
+        setPlayerConnection(playerContext.value.playerId, true)
+      }
+      sendSocketMessage(socket.value, 'game:update', { gameId })
+      break
+    case 'game:state':
+    case 'player:left':
+    case 'player:ready':
+    case 'territory:assigned':
+    case 'game:started':
+    case 'attack:finished':
+      if (message.game) {
+        game.value = message.game
+        ensurePlayerConnections(message.game.players ?? [])
+      }
+      if (message.type === 'player:left' && message.playerId) {
+        removePlayerConnection(message.playerId)
+        if (kickingPlayerId.value === message.playerId) {
+          kickingPlayerId.value = null
+        }
+      }
+      break
+    case 'player:connected':
+      if (message.playerId) {
+        setPlayerConnection(message.playerId, true)
+      }
+      break
+    case 'player:disconnected':
+      if (message.playerId) {
+        setPlayerConnection(message.playerId, false)
+      }
+      break
+    case 'player:kicked':
+      if (message.game) {
+        game.value = message.game
+        ensurePlayerConnections(message.game.players ?? [])
+      }
+      if (message.playerId) {
+        removePlayerConnection(message.playerId)
+        if (kickingPlayerId.value === message.playerId) {
+          kickingPlayerId.value = null
+        }
+        if (message.playerId === currentPlayerId.value) {
+          manualDisconnect = true
+          clearReconnectTimer()
+          if (socket.value) {
+            socket.value.close()
+            socket.value = null
+          }
+          clearPlayerContext()
+          error.value = 'Vous avez été expulsé de la partie.'
+          router.replace('/')
+        }
+      }
+      break
+    case 'player:kick-notice':
+      kickingPlayerId.value = null
+      manualDisconnect = true
+      clearReconnectTimer()
+      if (socket.value) {
+        socket.value.close()
+        socket.value = null
+      }
+      clearPlayerContext()
+      error.value = 'Vous avez été expulsé de la partie.'
+      router.replace('/')
+      break
+    case 'error':
+      if (typeof message.error === 'string') {
+        socketError.value = message.error
+      }
+      kickingPlayerId.value = null
+      break
+    default:
+      break
+  }
+}
+
+const setupSocket = () => {
+  if (!playerContext.value?.playerId) return
+
+  manualDisconnect = false
+  clearReconnectTimer()
+
+  const ws = createGameSocket({
+    onOpen: () => {
+      realtimeConnected.value = true
+      socketError.value = ''
+      const context = playerContext.value
+      if (context) {
+        sendSocketMessage(socket.value, 'register', {
+          playerId: context.playerId,
+          gameId: context.gameId
+        })
+      }
+    },
+    onMessage: handleSocketMessage,
+    onError: () => {
+      socketError.value = 'Erreur de connexion temps réel.'
+    },
+    onClose: () => {
+      realtimeConnected.value = false
+      socket.value = null
+      if (!manualDisconnect) {
+        scheduleReconnect()
+      }
+    }
+  })
+
+  if (ws) {
+    socket.value = ws
+  }
+}
 
 const maxPlayers = computed(() => game.value?.settings?.maxPlayers ?? 8)
 const playerCount = computed(() => game.value?.players?.length ?? 0)
@@ -72,20 +249,12 @@ const canStart = computed(
 const source = computed(() => game.value?.code ?? '')
 const { copy, copied } = useClipboard({ source })
 
-const loadPlayerContext = (): PlayerContext | null => {
-  try {
-    const stored = sessionStorage.getItem(PLAYER_SESSION_KEY)
-    return stored ? (JSON.parse(stored) as PlayerContext) : null
-  } catch {
-    return null
-  }
-}
-
 const fetchGame = async () => {
   try {
     loading.value = true
     const response = await getGame(gameId)
     game.value = response.game
+    ensurePlayerConnections(response.game?.players ?? [])
   } catch (err) {
     error.value =
       err instanceof Error ? err.message : 'Erreur lors du chargement de la partie'
@@ -95,15 +264,75 @@ const fetchGame = async () => {
 }
 
 onMounted(async () => {
-  playerContext.value = loadPlayerContext()
+  const storedContext = loadPlayerContext()
+
+  if (!storedContext || storedContext.gameId !== gameId) {
+    error.value = 'Impossible de retrouver votre session. Veuillez rejoindre la partie.'
+    loading.value = false
+    await router.replace('/')
+    return
+  }
+
+  playerContext.value = storedContext
   await fetchGame()
+  setupSocket()
 })
 
-const leaveGame = () => {
-  router.push('/')
+onBeforeUnmount(() => {
+  manualDisconnect = true
+  clearReconnectTimer()
+  if (socket.value) {
+    socket.value.close()
+    socket.value = null
+  }
+})
+
+const handleLeaveGame = async () => {
+  if (leavingGame.value) return
+
+  leaveError.value = ''
+  leavingGame.value = true
+
+  try {
+    const playerId = playerContext.value?.playerId
+
+    if (game.value?.id && playerId) {
+      await leaveGameRequest(game.value.id, playerId)
+      sendSocketMessage(socket.value, 'game:update', { gameId: game.value.id })
+    }
+
+    manualDisconnect = true
+    clearReconnectTimer()
+    if (socket.value) {
+      socket.value.close()
+      socket.value = null
+    }
+    realtimeConnected.value = false
+
+    clearPlayerContext()
+    await router.push('/')
+  } catch (err) {
+    leaveError.value =
+      err instanceof Error ? err.message : 'Impossible de quitter la partie pour le moment.'
+  } finally {
+    leavingGame.value = false
+  }
 }
 
 const playerHasTerritory = (playerId: string) => Boolean(territoriesByOwner.value[playerId])
+const isPlayerConnected = (playerId: string) => playerConnections.value[playerId] === true
+const isCurrentPlayer = (playerId: string) => playerId === currentPlayerId.value
+
+const kickPlayer = (targetId: string) => {
+  if (!isCurrentPlayerAdmin.value || !targetId || targetId === currentPlayerId.value) return
+  if (!socket.value || socket.value.readyState === WebSocket.CLOSING || socket.value.readyState === WebSocket.CLOSED) {
+    socketError.value = 'Connexion temps réel indisponible. Réessayez après reconnexion.'
+    kickingPlayerId.value = null
+    return
+  }
+  kickingPlayerId.value = targetId
+  sendSocketMessage(socket.value, 'player:kick', { targetId })
+}
 
 const handleStartGame = async () => {
   if (!game.value || !canStart.value || startingGame.value) return
@@ -114,6 +343,10 @@ const handleStartGame = async () => {
   try {
     const response = await startGameRequest(game.value.id, currentPlayerId.value)
     game.value = response.game
+    ensurePlayerConnections(response.game?.players ?? [])
+    if (response.game?.id) {
+      sendSocketMessage(socket.value, 'game:update', { gameId: response.game.id })
+    }
   } catch (err) {
     startError.value =
       err instanceof Error ? err.message : 'Impossible de démarrer la partie pour le moment.'
@@ -160,17 +393,28 @@ const handleStartGame = async () => {
               </div>
             </div>
 
-            <div class="flex flex-wrap gap-3">
+            <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <Button variant="outline" @click="copy(source)">
                 <Copy class="w-4 h-4 mr-2" />
                 <span v-if="!copied">COPIER CODE</span>
                 <span v-else>CODE COPIÉ !</span>
               </Button>
-              <Button @click="leaveGame" variant="destructive">
+              <Button
+                @click="handleLeaveGame"
+                variant="destructive"
+                :disabled="leavingGame"
+              >
                 <LogOut class="w-4 h-4 mr-2" />
-                Quitter
+                <span v-if="!leavingGame">Quitter</span>
+                <span v-else>Déconnexion...</span>
               </Button>
             </div>
+            <p v-if="leaveError" class="text-sm text-destructive">
+              {{ leaveError }}
+            </p>
+            <p v-else-if="socketError" class="text-sm text-amber-400">
+              {{ socketError }}
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -264,9 +508,10 @@ const handleStartGame = async () => {
             </CardContent>
           </Card>
 
-          <Card v-else class="border-dashed border-slate-700 bg-slate-900/50">
+          <Card v-else class="border-dashed">
             <CardHeader>
-              <CardTitle class="text-sm uppercase tracking-wide text-muted-foreground">
+              <CardTitle class="flex items-center gap-2">
+                <OctagonMinus class="size-6" />
                 Paramètres verrouillés
               </CardTitle>
             </CardHeader>
@@ -288,7 +533,10 @@ const handleStartGame = async () => {
             <CardContent>
               <div class="space-y-3">
                 <template v-for="player in game.players" :key="player.id">
-                  <div class="bg-accent rounded-lg p-2 border-2">
+                  <div
+                    class="bg-accent rounded-lg p-2 border-2 transition-colors"
+                    :class="isCurrentPlayer(player.id) ? 'border-primary/70 bg-primary/10' : 'border-transparent'"
+                  >
                     <div class="flex items-center gap-3">
                       <div
                         class="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold"
@@ -300,6 +548,24 @@ const handleStartGame = async () => {
                         <div class="flex items-center gap-2">
                           <span class="font-semibold">{{ player.twitchUsername }}</span>
                           <Crown v-if="player.isAdmin" class="w-4 h-4 text-yellow-500" />
+                          <span
+                            v-if="isCurrentPlayer(player.id)"
+                            class="text-xs uppercase tracking-wide px-2 py-0.5 rounded-full bg-primary/20 text-primary font-semibold"
+                          >
+                            Vous
+                          </span>
+                        </div>
+                        <div
+                          class="mt-1 flex items-center gap-2 text-xs"
+                          :class="isPlayerConnected(player.id) ? 'text-emerald-400' : 'text-slate-400'"
+                        >
+                          <span
+                            class="size-2 rounded-full"
+                            :class="
+                              isPlayerConnected(player.id) ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
+                            "
+                          ></span>
+                          <span>{{ isPlayerConnected(player.id) ? 'En ligne' : 'Hors ligne' }}</span>
                         </div>
                         <div class="text-sm text-muted-foreground flex items-center gap-1">
                           <template v-if="playerHasTerritory(player.id)">
@@ -308,6 +574,17 @@ const handleStartGame = async () => {
                           <template v-else>⏳ Choix en cours...</template>
                         </div>
                       </div>
+                      <Button
+                        v-if="isCurrentPlayerAdmin && !isCurrentPlayer(player.id)"
+                        variant="destructive"
+                        size="sm"
+                        class="shrink-0"
+                        :disabled="kickingPlayerId === player.id"
+                        @click="kickPlayer(player.id)"
+                      >
+                        <span v-if="kickingPlayerId === player.id">Expulsion...</span>
+                        <span v-else>Expulser</span>
+                      </Button>
                     </div>
                   </div>
                 </template>
@@ -364,7 +641,7 @@ const handleStartGame = async () => {
                   <template v-else>🚀 DÉMARRER LA CONQUÊTE !</template>
                 </Button>
 
-                <div v-else class="text-sm text-muted-foreground text-center">
+                <div v-else class="text-sm text-muted-foreground text-left italic">
                   En attente du créateur pour le lancement.
                 </div>
 
