@@ -23,6 +23,26 @@ export default async function gameRoutes(fastify) {
         }
     });
 
+    // Rejoindre une partie existante
+    fastify.post('/join', async (request, reply) => {
+        try {
+            const { code, playerId, twitchUsername } = request.body;
+
+            if (!code || !playerId || !twitchUsername) {
+                return reply.code(400).send({ error: 'code, playerId, and twitchUsername are required' });
+            }
+
+            const game = GameManager.joinGame(code, playerId, twitchUsername);
+
+            return {
+                success: true,
+                game: game.toJSON()
+            };
+        } catch (error) {
+            return reply.code(400).send({ error: error.message });
+        }
+    });
+
     // Obtenir les infos d'une partie
     fastify.get('/:gameId', async (request, reply) => {
         try {

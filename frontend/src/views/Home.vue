@@ -1,17 +1,41 @@
 <script setup lang="ts">
-import {ref} from 'vue'
-import {useRouter} from 'vue-router'
-import {Button} from '@/components/ui/button'
-import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle} from '@/components/ui/card'
-import {Users, Zap, Crown, KeyRound, Sword, Swords, MessageCircle} from 'lucide-vue-next'
-import {Input} from "@/components/ui/input"
-import {Label} from "@/components/ui/label"
-import {createGame} from '@/services/api'
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle
+} from '@/components/ui/card'
+import { Users, Zap, Crown, KeyRound, Sword, Swords, MessageCircle } from 'lucide-vue-next'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { createGame, joinGame } from '@/services/api'
+
+const PLAYER_SESSION_KEY = 'cos.player'
 
 const router = useRouter()
 const twitchUsername = ref('')
 const isCreating = ref(false)
 const error = ref('')
+
+const joinTwitchUsername = ref('')
+const joinCode = ref('')
+const isJoining = ref(false)
+const joinError = ref('')
+
+const persistPlayerContext = (context: {
+  playerId: string
+  twitchUsername: string
+  isAdmin: boolean
+  gameId: string
+  gameCode: string
+}) => {
+  sessionStorage.setItem(PLAYER_SESSION_KEY, JSON.stringify(context))
+}
 
 async function handleCreateGame() {
   if (!twitchUsername.value.trim()) {
@@ -22,16 +46,54 @@ async function handleCreateGame() {
   try {
     isCreating.value = true
     error.value = ''
-    const response = await createGame(twitchUsername.value.trim())
+    const adminId = crypto.randomUUID()
+    const response = await createGame(twitchUsername.value.trim(), adminId)
 
     if (response.success && response.game.id) {
-      // Redirect to the lobby with the game ID
+      persistPlayerContext({
+        playerId: adminId,
+        twitchUsername: twitchUsername.value.trim(),
+        isAdmin: true,
+        gameId: response.game.id,
+        gameCode: response.game.code
+      })
+
       await router.push(`/lobby/${response.game.id}`)
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Erreur lors de la création de la partie'
   } finally {
     isCreating.value = false
+  }
+}
+
+async function handleJoinGame() {
+  if (!joinTwitchUsername.value.trim() || !joinCode.value.trim()) {
+    joinError.value = 'Pseudo Twitch et code de session requis'
+    return
+  }
+
+  try {
+    isJoining.value = true
+    joinError.value = ''
+    const playerId = crypto.randomUUID()
+    const response = await joinGame(joinCode.value.trim().toUpperCase(), playerId, joinTwitchUsername.value.trim())
+
+    if (response.success && response.game.id) {
+      persistPlayerContext({
+        playerId,
+        twitchUsername: joinTwitchUsername.value.trim(),
+        isAdmin: false,
+        gameId: response.game.id,
+        gameCode: response.game.code
+      })
+
+      await router.push(`/lobby/${response.game.id}`)
+    }
+  } catch (err) {
+    joinError.value = err instanceof Error ? err.message : 'Impossible de rejoindre la partie'
+  } finally {
+    isJoining.value = false
   }
 }
 
@@ -136,18 +198,32 @@ const tutorial = [
           <form>
             <div class="grid items-center w-full gap-4">
               <div class="flex flex-col space-y-2">
-                <Label for="name">Pseudo Twitch</Label>
-                <Input id="name" placeholder="Potatoz"/>
+                <Label for="join-username">Pseudo Twitch</Label>
+                <Input
+                  id="join-username"
+                  v-model="joinTwitchUsername"
+                  placeholder="Potatoz"
+                  :disabled="isJoining"
+                />
               </div>
               <div class="flex flex-col space-y-2">
-                <Label for="name">Code session</Label>
-                <Input id="name" placeholder="1234"/>
+                <Label for="join-code">Code session</Label>
+                <Input
+                  id="join-code"
+                  v-model="joinCode"
+                  placeholder="ABC123"
+                  class="uppercase"
+                  :disabled="isJoining"
+                />
               </div>
+              <p v-if="joinError" class="text-sm text-destructive">{{ joinError }}</p>
             </div>
           </form>
         </CardContent>
         <CardFooter>
-          <Button class="w-full">Rejoindre</Button>
+          <Button class="w-full" :disabled="isJoining" @click="handleJoinGame">
+            {{ isJoining ? 'Connexion...' : 'Rejoindre' }}
+          </Button>
         </CardFooter>
       </Card>
     </div>
