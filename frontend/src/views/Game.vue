@@ -9,6 +9,8 @@ import {
   CardHeader,
   CardTitle
 } from '@/components/ui/card'
+import {Kbd} from '@/components/ui/kbd'
+import {ScrollArea} from '@/components/ui/scroll-area'
 import LobbyDeckMap from '@/components/maps/LobbyDeckMap.vue'
 import {createGameSocket, sendSocketMessage, type SocketMessage} from '@/services/socket'
 import {getGame, leaveGame as leaveGameRequest} from '@/services/api'
@@ -39,6 +41,7 @@ const playerConnections = ref<Record<string, boolean>>({})
 const playerContext = ref<PlayerContext | null>(null)
 const leavingGame = ref(false)
 const leaveError = ref('')
+const scoreboardVisible = ref(false)
 
 let reconnectTimer: number | null = null
 let manualDisconnect = false
@@ -99,6 +102,42 @@ const connectedPlayerCount = computed(() =>
 )
 
 const adminLabel = computed(() => game.value?.adminTwitchUsername ?? 'Admin')
+
+const gameStatusLabel = computed(() => {
+  const status = game.value?.status
+  if (!status || typeof status !== 'string') return 'Inconnu'
+  const map: Record<string, string> = {
+    lobby: 'Lobby',
+    'in-progress': 'En cours',
+    finished: 'Terminé'
+  }
+  return map[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
+})
+
+const gameInfoItems = computed(() => {
+  const items: { label: string; value: string }[] = []
+  const name = typeof game.value?.name === 'string' ? game.value.name.trim() : ''
+  if (name) {
+    items.push({ label: 'Partie', value: name })
+  }
+  items.push(
+      { label: 'Host', value: adminLabel.value },
+      { label: 'Statut', value: gameStatusLabel.value },
+      {
+        label: 'Connectés',
+        value: `${connectedPlayerCount.value}/${playersSummary.value.length}`
+      }
+  )
+  const roundNumber = game.value?.roundNumber
+  if (typeof roundNumber === 'number') {
+    items.push({ label: 'Manche', value: `#${roundNumber}` })
+  }
+  const phase = typeof game.value?.phase === 'string' ? game.value.phase.trim() : ''
+  if (phase) {
+    items.push({ label: 'Phase', value: phase })
+  }
+  return items
+})
 
 const clearReconnectTimer = () => {
   if (reconnectTimer !== null) {
@@ -290,6 +329,20 @@ const handleLeaveGame = async () => {
   }
 }
 
+const handleTabKeyDown = (event: KeyboardEvent) => {
+  if (event.key !== 'Tab') return
+  event.preventDefault()
+  if (!scoreboardVisible.value) {
+    scoreboardVisible.value = true
+  }
+}
+
+const handleTabKeyUp = (event: KeyboardEvent) => {
+  if (event.key !== 'Tab') return
+  event.preventDefault()
+  scoreboardVisible.value = false
+}
+
 watch(
     () => game.value?.status,
     (status) => {
@@ -301,6 +354,9 @@ watch(
 )
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleTabKeyDown)
+  window.addEventListener('keyup', handleTabKeyUp)
+
   const storedContext = loadPlayerContext()
 
   if (!storedContext || storedContext.gameId !== gameId) {
@@ -322,6 +378,10 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  scoreboardVisible.value = false
+  window.removeEventListener('keydown', handleTabKeyDown)
+  window.removeEventListener('keyup', handleTabKeyUp)
+
   manualDisconnect = true
   clearReconnectTimer()
   if (socket.value) {
@@ -353,6 +413,89 @@ onBeforeUnmount(() => {
             :current-player-id="currentPlayerId"
             :disable-interaction="true"
         />
+      </div>
+
+      <div
+          v-if="scoreboardVisible"
+          class="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-sm">
+        <div class="pointer-events-auto flex w-full max-w-5xl flex-col gap-6">
+          <Card class="backdrop-blur">
+            <CardHeader>
+              <CardTitle class="flex items-center gap-2">
+                <Users class="size-5 text-emerald-300"/>
+                <span>Tableau de bord</span>
+              </CardTitle>
+              <CardDescription class="text-sm">
+                <span class="flex items-center gap-2">
+                  Aperçu de la partie
+                  <Kbd>Tab</Kbd>
+                  pour masquer.
+                </span>
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                <div
+                    v-for="item in gameInfoItems"
+                    :key="item.label"
+                    class="rounded-lg border bg-accent p-4">
+                  <span class="text-xs uppercase tracking-wide text-muted-foreground">{{ item.label }}</span>
+                  <p class="mt-1 text-base font-semibold ">{{ item.value }}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card class="backdrop-blur">
+            <CardHeader class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle class="flex items-center gap-2">
+                <Users class="size-4 text-emerald-300"/>
+                <span>Joueurs</span>
+              </CardTitle>
+              <CardDescription class="text-xs">
+                {{ connectedPlayerCount }}/{{ playersSummary.length }} connectés
+              </CardDescription>
+            </CardHeader>
+            <CardContent class="pt-0">
+              <ScrollArea class="max-h-[360px] pr-4">
+                <ul class="space-y-3 p-1">
+                  <li
+                      v-for="player in playersSummary"
+                      :key="player.id"
+                      class="flex items-center justify-between rounded-xl border bg-accent px-4 py-4"
+                      :class="player.isCurrent ? 'ring-2 ring-primary/80' : ''"
+                  >
+                    <div class="flex items-center gap-3">
+                      <span
+                          class="size-3 rounded-full ring-2 ring-white/30"
+                          :style="{ backgroundColor: player.color || '#94a3b8' }"
+                      ></span>
+                      <div class="flex flex-col">
+                        <span class="text-sm font-semibold text-slate-100">
+                          {{ player.twitchUsername }}
+                          <span v-if="player.isAdmin" class="ml-1 text-xs uppercase text-yellow-400">Host</span>
+                          <span v-else-if="player.isCurrent" class="ml-1 text-xs uppercase text-primary">Vous</span>
+                        </span>
+                        <span class="text-xs text-slate-400">
+                          Territoires: {{ player.territories }} • Score: {{ player.score }}
+                        </span>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs">
+                      <span :class="player.connected ? 'text-emerald-300' : 'text-slate-500'">
+                        {{ player.connected ? 'Connecté' : 'Déconnecté' }}
+                      </span>
+                      <span
+                          class="size-2 rounded-full"
+                          :class="player.connected ? 'bg-emerald-400' : 'bg-slate-500'"
+                      ></span>
+                    </div>
+                  </li>
+                </ul>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <div class="pointer-events-none absolute inset-0 flex flex-col">
@@ -399,55 +542,7 @@ onBeforeUnmount(() => {
         </Card>
 
         <main class="relative flex flex-1">
-          <aside
-              class="pointer-events-auto absolute left-4 right-4 top-[180px] z-10 mx-auto flex w-full max-w-md flex-col gap-4 sm:left-6 sm:right-auto sm:top-28 sm:w-80">
-            <Card class="bg-card/70 shadow-lg ring-1 ring-white/10 backdrop-blur">
-              <CardHeader>
-                <div class="flex items-center justify-between">
-                  <CardTitle
-                      class="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide">
-                    <Users class="size-4 text-emerald-300"/>
-                    <span>Joueurs</span>
-                  </CardTitle>
-                  <CardDescription class="text-xs">Classement provisoire</CardDescription>
-                </div>
-              </CardHeader>
-              <CardContent class="pt-0">
-                <ul class="space-y-3">
-                  <li
-                      v-for="player in playersSummary"
-                      :key="player.id"
-                      class="flex items-center justify-between rounded-xl border border-white/5 bg-card/70 px-3 py-3 transition hover:border-white/20"
-                      :class="player.isCurrent ? 'outline outline-1 outline-primary/80' : ''"
-                  >
-                    <div class="flex items-center gap-3">
-                      <span
-                          class="size-3 rounded-full ring-2 ring-white/30"
-                          :style="{ backgroundColor: player.color || '#94a3b8' }"
-                      ></span>
-                      <div class="flex flex-col leading-tight">
-                        <span class="text-sm font-semibold text-slate-100">
-                          {{ player.twitchUsername }}
-                          <span v-if="player.isAdmin" class="ml-1 text-xs uppercase text-yellow-400">Host</span>
-                          <span v-else-if="player.isCurrent" class="ml-1 text-xs uppercase text-primary">Vous</span>
-                        </span>
-                        <span class="text-xs text-slate-400">
-                          Territoires: {{ player.territories }} • Score: {{ player.score }}
-                        </span>
-                      </div>
-                    </div>
-                    <span
-                        class="size-2 rounded-full"
-                        :class="player.connected ? 'bg-emerald-400' : 'bg-slate-500'"
-                        :title="player.connected ? 'Connecté' : 'Déconnecté'"
-                    ></span>
-                  </li>
-                </ul>
-              </CardContent>
-            </Card>
-          </aside>
-
-          <section class="pointer-events-none flex flex-1 flex-col justify-end">
+          <section class="pointer-events-none flex flex-1 flex-col items-center justify-end">
             <Card
                 class="pointer-events-auto mx-auto mb-8 w-full max-w-4xl bg-card/70 ring-1 ring-white/10 backdrop-blur">
               <CardHeader class="pb-3">
