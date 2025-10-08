@@ -438,7 +438,7 @@ const isPlayerConnected = (playerId: string) => playerConnections.value[playerId
 const isCurrentPlayer = (playerId: string) => playerId === currentPlayerId.value
 
 const handleSettingsReset = () => {
-  populateSettingsForm((game.value?.settings as SettingsPayload | undefined) ?? undefined)
+  populateSettingsForm()
   settingsError.value = ''
   settingsSuccess.value = ''
 }
