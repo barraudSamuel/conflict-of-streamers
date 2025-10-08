@@ -13,6 +13,8 @@ interface LobbyTerritory {
   id: string
   ownerId?: string | null
   defensePower?: number | null
+  code?: string | null
+  name?: string | null
 }
 
 interface LobbyPlayer {
@@ -33,15 +35,6 @@ const emit = defineEmits<{
   (event: 'select', territoryId: string): void
 }>()
 
-const containerRef = ref<HTMLDivElement | null>(null)
-let deckInstance: Deck | null = null
-const mapAppearance = computed(() => props.appearance ?? 'lobby')
-const containerClass = computed(() => ({
-  'lobby-map-canvas': true,
-  'lobby-map-canvas--game': mapAppearance.value === 'game'
-}))
-const showDefenseOverlay = computed(() => mapAppearance.value === 'game')
-
 const initialViewState = {
   longitude: 15,
   latitude: 15,
@@ -51,6 +44,16 @@ const initialViewState = {
   bearing: 0,
   pitch: 0
 }
+
+const containerRef = ref<HTMLDivElement | null>(null)
+let deckInstance: Deck | null = null
+const mapAppearance = computed(() => props.appearance ?? 'lobby')
+const containerClass = computed(() => ({
+  'lobby-map-canvas': true,
+  'lobby-map-canvas--game': mapAppearance.value === 'game'
+}))
+const showDefenseOverlay = computed(() => mapAppearance.value === 'game')
+const viewZoom = ref(initialViewState.zoom)
 
 const DEFAULT_AVAILABLE_COLOR: [number, number, number, number] = [71, 85, 105, 130]
 const DEFAULT_OCCUPIED_COLOR: [number, number, number, number] = [148, 163, 184, 210]
@@ -89,16 +92,41 @@ const territoryState = computed(() => {
     const ownerName = isBot ? 'Faction IA' : owner?.twitchUsername ?? 'Disponible'
     const ownerColor = isBot ? BOT_OWNER_COLOR : owner?.color ?? null
 
-    state.set(territory.id, {
+    const info = {
       ownerId,
       ownerName,
       ownerColor,
       defensePower: territory.defensePower ?? null,
       isBot
+    }
+
+    const keys = new Set<string>()
+    if (territory.id) keys.add(String(territory.id))
+    if (territory.code) keys.add(String(territory.code))
+    if (territory.name) keys.add(String(territory.name))
+
+    keys.forEach((key) => {
+      if (key.trim().length > 0) {
+        state.set(key, info)
+      }
     })
   })
 
   return state
+})
+
+const DEFENSE_SIZE_MIN = 2
+const DEFENSE_SIZE_MAX = 26
+const defenseLabelSize = computed(() => {
+  const rawZoom = Number.isFinite(viewZoom.value) ? (viewZoom.value as number) : initialViewState.zoom
+  const minZoom = typeof initialViewState.minZoom === 'number' ? initialViewState.minZoom : 0
+  const maxZoom = typeof initialViewState.maxZoom === 'number' ? initialViewState.maxZoom : 6
+  const clampedZoom = Math.max(minZoom, Math.min(maxZoom, rawZoom))
+  const normalized =
+    maxZoom === minZoom ? 1 : Math.min(1, Math.max(0, (clampedZoom - minZoom) / (maxZoom - minZoom)))
+  const size = DEFENSE_SIZE_MIN + normalized * (DEFENSE_SIZE_MAX - DEFENSE_SIZE_MIN)
+
+  return Math.round(size)
 })
 
 const defenseLabels = computed<DefenseLabelDatum[]>(() =>
@@ -283,7 +311,7 @@ const createDefenseLayer = () =>
     data: defenseLabels.value,
     billboard: false,
     getPosition: (item) => item.position,
-    getText: (item) => `🛡 ${item.defense}`,
+    getText: (item) => `🛡${item.defense}`,
     getColor: (item) => {
       if (item.isCurrent) {
         return [248, 250, 252, 255]
@@ -293,10 +321,10 @@ const createDefenseLayer = () =>
       }
       return [226, 232, 240, 255]
     },
-    getSize: () => (mapAppearance.value === 'game' ? 18 : 14),
+    getSize: () => defenseLabelSize.value,
     sizeUnits: 'pixels',
-    sizeMinPixels: 12,
-    sizeMaxPixels: 28,
+    sizeMinPixels: Math.max(6, defenseLabelSize.value - 8),
+    sizeMaxPixels: Math.min(36, defenseLabelSize.value + 10),
     getTextAnchor: () => 'middle',
     getAlignmentBaseline: () => 'center',
     characterSet: 'auto'
@@ -321,7 +349,12 @@ onMounted(() => {
     },
     layers: layers.value,
     getCursor,
-    getTooltip: tooltipFn
+    getTooltip: tooltipFn,
+    onViewStateChange: ({ viewState }) => {
+      if (Number.isFinite(viewState.zoom)) {
+        viewZoom.value = viewState.zoom as number
+      }
+    }
   })
 })
 
@@ -336,7 +369,7 @@ watch(
   }
 )
 
-watch([layers, territoryState, defenseLabels, showDefenseOverlay], () => {
+watch([layers, territoryState, defenseLabels, showDefenseOverlay, defenseLabelSize], () => {
   if (!deckInstance) return
   deckInstance.setProps({
     layers: layers.value
