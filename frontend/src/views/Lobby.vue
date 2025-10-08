@@ -51,6 +51,17 @@ let reconnectTimer: number | null = null
 let manualDisconnect = false
 let settingsStatusTimer: number | null = null
 
+const goToGameIfPlaying = (maybeGame?: any) => {
+  const target = maybeGame ?? game.value
+  if (!target?.id || target.status !== 'playing') {
+    return
+  }
+  if (router.currentRoute.value.name === 'game') {
+    return
+  }
+  router.push(`/game/${target.id}`)
+}
+
 const SETTINGS_DEFAULTS = {
   attackDuration: 120,
   defenseDuration: 120,
@@ -193,6 +204,7 @@ const handleSocketMessage = (message: SocketMessage) => {
       if (message.game) {
         game.value = message.game
         ensurePlayerConnections(message.game.players ?? [])
+        goToGameIfPlaying(message.game)
       }
       if (message.type === 'player:left' && message.playerId) {
         removePlayerConnection(message.playerId)
@@ -356,6 +368,7 @@ const fetchGame = async () => {
     const response = await getGame(gameId)
     game.value = response.game
     ensurePlayerConnections(response.game?.players ?? [])
+    goToGameIfPlaying(response.game)
   } catch (err) {
     error.value =
       err instanceof Error ? err.message : 'Erreur lors du chargement de la partie'
@@ -512,6 +525,7 @@ const handleStartGame = async () => {
     const response = await startGameRequest(game.value.id, currentPlayerId.value)
     game.value = response.game
     ensurePlayerConnections(response.game?.players ?? [])
+    goToGameIfPlaying(response.game)
     if (response.game?.id) {
       sendSocketMessage(socket.value, 'game:update', { gameId: response.game.id })
     }

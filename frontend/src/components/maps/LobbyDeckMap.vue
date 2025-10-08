@@ -26,6 +26,7 @@ const props = defineProps<{
   players: LobbyPlayer[]
   currentPlayerId: string
   disableInteraction?: boolean
+  appearance?: 'lobby' | 'game'
 }>()
 
 const emit = defineEmits<{
@@ -34,6 +35,11 @@ const emit = defineEmits<{
 
 const containerRef = ref<HTMLDivElement | null>(null)
 let deckInstance: Deck | null = null
+const mapAppearance = computed(() => props.appearance ?? 'lobby')
+const containerClass = computed(() => ({
+  'lobby-map-canvas': true,
+  'lobby-map-canvas--game': mapAppearance.value === 'game'
+}))
 
 const initialViewState = {
   longitude: 15,
@@ -256,7 +262,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="containerRef" class="lobby-map-canvas" />
+  <div ref="containerRef" :class="containerClass" />
 </template>
 
 <style scoped>
@@ -268,5 +274,10 @@ onBeforeUnmount(() => {
   border-radius: 0.75rem;
   overflow: hidden;
   background: radial-gradient(circle at 50% 30%, rgba(148, 163, 184, 0.15), rgba(30, 41, 59, 0.85));
+}
+
+.lobby-map-canvas--game {
+  min-height: 100%;
+  border-radius: 0;
 }
 </style>
