@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useClipboard } from '@vueuse/core'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   getGame,
   startGame as startGameRequest,
   leaveGame as leaveGameRequest,
-  assignTerritory
+  assignTerritory,
+  updateGameSettings as updateGameSettingsRequest,
+  type GameSettings
 } from '@/services/api'
 import { createGameSocket, sendSocketMessage, type SocketMessage } from '@/services/socket'
 import { clearPlayerContext, loadPlayerContext, type PlayerContext } from '@/lib/playerStorage'
@@ -46,6 +49,75 @@ const kickingPlayerId = ref<string | null>(null)
 
 let reconnectTimer: number | null = null
 let manualDisconnect = false
+let settingsStatusTimer: number | null = null
+
+const SETTINGS_DEFAULTS = {
+  attackDuration: 120,
+  defenseDuration: 120,
+  reinforcementDuration: 60,
+  botBaseDefense: 200,
+  botFrontierMultiplier: 0.2,
+  messageAttackBonus: 50,
+  messageDefenseBonus: 40,
+  messageReinforcementBonus: 100,
+  frontierAttackBonus: 20,
+  frontierDefenseBonus: 10,
+  conquestCooldown: 5,
+  defenseCooldown: 5
+} as const
+
+type SettingsFormKey = keyof typeof SETTINGS_DEFAULTS
+type SettingsFormState = Record<SettingsFormKey, string>
+type SettingsPayload = Partial<Pick<GameSettings, SettingsFormKey>>
+
+const settingsForm = reactive<SettingsFormState>({
+  attackDuration: '',
+  defenseDuration: '',
+  reinforcementDuration: '',
+  botBaseDefense: '',
+  botFrontierMultiplier: '',
+  messageAttackBonus: '',
+  messageDefenseBonus: '',
+  messageReinforcementBonus: '',
+  frontierAttackBonus: '',
+  frontierDefenseBonus: '',
+  conquestCooldown: '',
+  defenseCooldown: ''
+})
+
+const settingsSaving = ref(false)
+const settingsError = ref('')
+const settingsSuccess = ref('')
+
+const toInputValue = (value: unknown, fallback: number): string => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value)
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    return value.trim()
+  }
+  return String(fallback)
+}
+
+const populateSettingsForm = (settings?: SettingsPayload) => {
+  const keys = Object.keys(SETTINGS_DEFAULTS) as SettingsFormKey[]
+  keys.forEach((key) => {
+    const fallback = SETTINGS_DEFAULTS[key]
+    const nextValue = settings?.[key]
+    settingsForm[key] = toInputValue(nextValue, fallback)
+  })
+}
+
+const parseFieldValue = (value: string, fallback: number): number => {
+  const normalized = (value ?? '').toString().trim().replace(',', '.')
+  if (!normalized) return fallback
+
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+  return parsed
+}
 
 const clearReconnectTimer = () => {
   if (reconnectTimer !== null) {
@@ -292,6 +364,14 @@ const fetchGame = async () => {
   }
 }
 
+watch(
+  () => game.value?.settings,
+  (next) => {
+    populateSettingsForm((next as SettingsPayload | undefined) ?? undefined)
+  },
+  { immediate: true }
+)
+
 onMounted(async () => {
   const storedContext = loadPlayerContext()
 
@@ -310,6 +390,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   manualDisconnect = true
   clearReconnectTimer()
+  if (settingsStatusTimer !== null) {
+    window.clearTimeout(settingsStatusTimer)
+    settingsStatusTimer = null
+  }
   if (socket.value) {
     socket.value.close()
     socket.value = null
@@ -352,6 +436,60 @@ const playerHasTerritory = (playerId: string) => Boolean(territoriesByOwner.valu
 const playerTerritoryName = (playerId: string) => territoryNameByOwner.value[playerId] ?? ''
 const isPlayerConnected = (playerId: string) => playerConnections.value[playerId] === true
 const isCurrentPlayer = (playerId: string) => playerId === currentPlayerId.value
+
+const handleSettingsReset = () => {
+  populateSettingsForm((game.value?.settings as SettingsPayload | undefined) ?? undefined)
+  settingsError.value = ''
+  settingsSuccess.value = ''
+}
+
+const handleSettingsSubmit = async () => {
+  if (!game.value?.id || !isCurrentPlayerAdmin.value) {
+    return
+  }
+
+  const adminId = currentPlayerId.value
+  if (!adminId) {
+    settingsError.value = 'Session invalide. Reconnectez-vous pour modifier les paramètres.'
+    return
+  }
+
+  const payload: Partial<GameSettings> = {}
+  const keys = Object.keys(SETTINGS_DEFAULTS) as SettingsFormKey[]
+
+  keys.forEach((key) => {
+    const currentValue = game.value?.settings?.[key as keyof GameSettings]
+    const fallback =
+      typeof currentValue === 'number' && Number.isFinite(currentValue)
+        ? currentValue
+        : SETTINGS_DEFAULTS[key]
+    payload[key] = parseFieldValue(settingsForm[key], fallback)
+  })
+
+  settingsSaving.value = true
+  settingsError.value = ''
+  settingsSuccess.value = ''
+
+  try {
+    const response = await updateGameSettingsRequest(game.value.id, adminId, payload)
+    game.value = response.game
+    ensurePlayerConnections(response.game?.players ?? [])
+    settingsSuccess.value = 'Paramètres enregistrés.'
+
+    if (settingsStatusTimer !== null) {
+      window.clearTimeout(settingsStatusTimer)
+    }
+    settingsStatusTimer = window.setTimeout(() => {
+      settingsSuccess.value = ''
+      settingsStatusTimer = null
+    }, 3000)
+  } catch (err) {
+    settingsError.value =
+      err instanceof Error ? err.message : 'Impossible de mettre à jour les paramètres.'
+  } finally {
+    settingsSaving.value = false
+  }
+}
 
 const kickPlayer = (targetId: string) => {
   if (!isCurrentPlayerAdmin.value || !targetId || targetId === currentPlayerId.value) return
@@ -563,41 +701,276 @@ const handleTerritorySelect = async (territoryId: string) => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div class="space-y-4">
-                <div class="text-base font-medium mb-3">Durées des Actions (secondes)</div>
-
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div class="space-y-2">
-                    <label class="text-sm flex items-center gap-2"> ⚔️ Durée Attaque </label>
-                    <Input
-                      type="number"
-                      :value="game.settings?.attackDuration || 30"
-                      class="bg-slate-800 border-slate-700 text-white"
-                      readonly
-                    />
+              <form class="space-y-8" @submit.prevent="handleSettingsSubmit">
+                <section class="space-y-4">
+                  <div>
+                    <p class="text-xs uppercase tracking-wide text-muted-foreground">
+                      Durées des actions
+                    </p>
+                    <p class="text-sm text-slate-400">Configurez les phases en secondes</p>
                   </div>
-
-                  <div class="space-y-2">
-                    <label class="text-sm flex items-center gap-2"> 🛡️ Durée Défense </label>
-                    <Input
-                      type="number"
-                      :value="game.settings?.defenseDuration || 30"
-                      class="bg-slate-800 border-slate-700 text-white"
-                      readonly
-                    />
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div class="space-y-2">
+                      <Label for="settings-attackDuration">
+                        <span class="text-lg">⚔️</span>
+                        Durée Attaque
+                      </Label>
+                      <Input
+                        id="settings-attackDuration"
+                        v-model="settingsForm.attackDuration"
+                        type="number"
+                        min="10"
+                        inputmode="numeric"
+                        placeholder="120"
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="settings-defenseDuration">
+                        <span class="text-lg">🛡️</span>
+                        Durée Défense
+                      </Label>
+                      <Input
+                        id="settings-defenseDuration"
+                        v-model="settingsForm.defenseDuration"
+                        type="number"
+                        min="10"
+                        inputmode="numeric"
+                        placeholder="120"
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="settings-reinforcementDuration">
+                        <span class="text-lg">💪</span>
+                        Durée Renfort
+                      </Label>
+                      <Input
+                        id="settings-reinforcementDuration"
+                        v-model="settingsForm.reinforcementDuration"
+                        type="number"
+                        min="10"
+                        inputmode="numeric"
+                        placeholder="60"
+                      />
+                    </div>
                   </div>
+                </section>
 
-                  <div class="space-y-2">
-                    <label class="text-sm flex items-center gap-2"> 💪 Durée Renfort </label>
-                    <Input
-                      type="number"
-                      :value="game.settings?.reinforcementDuration || 30"
-                      class="bg-slate-800 border-slate-700 text-white"
-                      readonly
-                    />
+                <section class="space-y-4">
+                  <div>
+                    <p class="text-xs uppercase tracking-wide text-muted-foreground">
+                      Paramètres des bots
+                    </p>
+                    <p class="text-sm text-slate-400">Déterminez la résistance automatique</p>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div class="space-y-2">
+                      <Label for="settings-botBaseDefense">
+                        <span class="text-lg">🤖</span>
+                        Défense Bot de Base
+                      </Label>
+                      <Input
+                        id="settings-botBaseDefense"
+                        v-model="settingsForm.botBaseDefense"
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputmode="numeric"
+                        placeholder="200"
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="settings-botFrontierMultiplier">
+                        <span class="text-lg">🌐</span>
+                        Coefficient Frontière Bot
+                      </Label>
+                      <Input
+                        id="settings-botFrontierMultiplier"
+                        v-model="settingsForm.botFrontierMultiplier"
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        inputmode="decimal"
+                        placeholder="0.2"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section class="space-y-4">
+                  <div>
+                    <p class="text-xs uppercase tracking-wide text-muted-foreground">
+                      Amplificateurs messages
+                    </p>
+                    <p class="text-sm text-slate-400">Bonus appliqués aux commandes chat</p>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div class="space-y-2">
+                      <Label for="settings-messageAttackBonus">
+                        <span class="text-lg">⚔️</span>
+                        Bonus Attaque
+                      </Label>
+                      <Input
+                        id="settings-messageAttackBonus"
+                        v-model="settingsForm.messageAttackBonus"
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputmode="numeric"
+                        placeholder="50"
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="settings-messageDefenseBonus">
+                        <span class="text-lg">🛡️</span>
+                        Bonus Défense
+                      </Label>
+                      <Input
+                        id="settings-messageDefenseBonus"
+                        v-model="settingsForm.messageDefenseBonus"
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputmode="numeric"
+                        placeholder="40"
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="settings-messageReinforcementBonus">
+                        <span class="text-lg">💪</span>
+                        Bonus Renfort
+                      </Label>
+                      <Input
+                        id="settings-messageReinforcementBonus"
+                        v-model="settingsForm.messageReinforcementBonus"
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputmode="numeric"
+                        placeholder="100"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section class="space-y-4">
+                  <div>
+                    <p class="text-xs uppercase tracking-wide text-muted-foreground">
+                      Amplificateur frontières
+                    </p>
+                    <p class="text-sm text-slate-400">Bonus appliqués lors des combats adjacents</p>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div class="space-y-2">
+                      <Label for="settings-frontierAttackBonus">
+                        <span class="text-lg">⚔️</span>
+                        Bonus Attaques
+                      </Label>
+                      <Input
+                        id="settings-frontierAttackBonus"
+                        v-model="settingsForm.frontierAttackBonus"
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputmode="numeric"
+                        placeholder="20"
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="settings-frontierDefenseBonus">
+                        <span class="text-lg">🛡️</span>
+                        Bonus Défense
+                      </Label>
+                      <Input
+                        id="settings-frontierDefenseBonus"
+                        v-model="settingsForm.frontierDefenseBonus"
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputmode="numeric"
+                        placeholder="10"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section class="space-y-4">
+                  <div>
+                    <p class="text-xs uppercase tracking-wide text-muted-foreground">
+                      Cooldowns (minutes)
+                    </p>
+                    <p class="text-sm text-slate-400">Délais avant les actions suivantes</p>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div class="space-y-2">
+                      <Label for="settings-conquestCooldown">
+                        <span class="text-lg">🏰</span>
+                        Cooldown Conquête
+                      </Label>
+                      <Input
+                        id="settings-conquestCooldown"
+                        v-model="settingsForm.conquestCooldown"
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputmode="numeric"
+                        placeholder="5"
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="settings-defenseCooldown">
+                        <span class="text-lg">🛡️</span>
+                        Cooldown Défense
+                      </Label>
+                      <Input
+                        id="settings-defenseCooldown"
+                        v-model="settingsForm.defenseCooldown"
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputmode="numeric"
+                        placeholder="5"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <div class="flex flex-col-reverse gap-3 md:flex-row md:items-center md:justify-between">
+                  <div class="text-sm">
+                    <span v-if="settingsError" class="text-destructive font-medium">{{ settingsError }}</span>
+                    <span v-else-if="settingsSuccess" class="text-emerald-400 font-medium">{{ settingsSuccess }}</span>
+                    <span v-else class="text-muted-foreground">
+                      Ajustez les paramètres avant de lancer la partie.
+                    </span>
+                  </div>
+                  <div class="flex flex-col gap-2 w-full md:w-auto md:flex-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      class="w-full md:w-auto"
+                      :disabled="settingsSaving"
+                      @click="handleSettingsReset"
+                    >
+                      Réinitialiser
+                    </Button>
+                    <Button
+                      type="submit"
+                      class="w-full md:w-auto"
+                      size="lg"
+                      :disabled="settingsSaving"
+                    >
+                      <template v-if="settingsSaving">
+                        <span class="flex items-center gap-2">
+                          <span class="size-4 rounded-full border-2 border-white/40 border-t-transparent animate-spin"></span>
+                          Sauvegarde...
+                        </span>
+                      </template>
+                      <template v-else>
+                        Sauvegarder les paramètres
+                      </template>
+                    </Button>
                   </div>
                 </div>
-              </div>
+              </form>
             </CardContent>
           </Card>
 

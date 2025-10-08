@@ -1,6 +1,79 @@
 import { v4 as uuidv4 } from 'uuid';
 import MapService from '../services/MapService.js';
 
+const DEFAULT_SETTINGS = {
+    attackDuration: 120,
+    defenseDuration: 120,
+    reinforcementDuration: 60,
+    botBaseDefense: 200,
+    botFrontierMultiplier: 0.2,
+    messageAttackBonus: 50,
+    messageDefenseBonus: 40,
+    messageReinforcementBonus: 100,
+    frontierAttackBonus: 20,
+    frontierDefenseBonus: 10,
+    conquestCooldown: 5,
+    defenseCooldown: 5,
+    pointsPerCommand: 1,
+    maxPlayers: 8
+};
+
+const NUMERIC_CONSTRAINTS = {
+    attackDuration: { min: 10, max: 3600 },
+    defenseDuration: { min: 10, max: 3600 },
+    reinforcementDuration: { min: 10, max: 3600 },
+    botBaseDefense: { min: 0, max: 100000 },
+    botFrontierMultiplier: { min: 0, max: 10 },
+    messageAttackBonus: { min: 0, max: 100000 },
+    messageDefenseBonus: { min: 0, max: 100000 },
+    messageReinforcementBonus: { min: 0, max: 100000 },
+    frontierAttackBonus: { min: 0, max: 100000 },
+    frontierDefenseBonus: { min: 0, max: 100000 },
+    conquestCooldown: { min: 0, max: 1440 },
+    defenseCooldown: { min: 0, max: 1440 },
+    pointsPerCommand: { min: 0, max: 100000 },
+    maxPlayers: { min: 2, max: 20 }
+};
+
+function sanitizeSettings(input = {}, base = DEFAULT_SETTINGS) {
+    const settings = { ...base };
+
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+        if (!(key in input)) {
+            continue;
+        }
+
+        const raw = input[key];
+        if (raw === '' || raw === null || raw === undefined) {
+            continue;
+        }
+
+        const numericValue = Number(raw);
+        if (!Number.isFinite(numericValue)) {
+            continue;
+        }
+
+        const { min, max } = NUMERIC_CONSTRAINTS[key] || {};
+        let sanitized = numericValue;
+
+        if (typeof min === 'number' && sanitized < min) {
+            sanitized = min;
+        }
+
+        if (typeof max === 'number' && sanitized > max) {
+            sanitized = max;
+        }
+
+        if (key === 'maxPlayers') {
+            sanitized = Math.round(sanitized);
+        }
+
+        settings[key] = sanitized;
+    }
+
+    return settings;
+}
+
 export class Game {
     constructor(adminId, adminTwitchUsername, settings = {}) {
         this.id = uuidv4();
@@ -8,12 +81,7 @@ export class Game {
         this.adminId = adminId;
         this.adminTwitchUsername = adminTwitchUsername;
         this.status = 'lobby'; // lobby | playing | finished
-        this.settings = {
-            attackDuration: settings.attackDuration || 30,
-            pointsPerCommand: settings.pointsPerCommand || 1,
-            maxPlayers: settings.maxPlayers || 8,
-            allowDuplicateUsers: settings.allowDuplicateUsers || false
-        };
+        this.settings = sanitizeSettings(settings, DEFAULT_SETTINGS);
         this.players = [];
         this.territories = new Map();
         this.activeAttacks = new Map(); // territoryId -> Attack (plusieurs attaques simultanées)
@@ -119,6 +187,10 @@ export class Game {
         this.status = 'finished';
         this.finishedAt = Date.now();
         this.activeAttacks.clear();
+    }
+
+    updateSettings(settings = {}) {
+        this.settings = sanitizeSettings(settings, this.settings);
     }
 
     // Vérifier si un joueur peut attaquer (pas déjà en attaque)

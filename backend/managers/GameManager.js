@@ -115,6 +115,20 @@ class GameManager {
         return game;
     }
 
+    updateGameSettings(gameId, adminId, settings) {
+        const game = this.getGame(gameId);
+        if (!game) {
+            throw new Error('Game not found');
+        }
+
+        if (game.adminId !== adminId) {
+            throw new Error('Only admin can update the settings');
+        }
+
+        game.updateSettings(settings);
+        return game;
+    }
+
     getAllGames() {
         return Array.from(this.games.values()).map(g => g.toJSON());
     }

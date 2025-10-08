@@ -322,7 +322,7 @@ export function setupWebSocket(connection, req) {
     }
 }
 
-function broadcastToGame(gameId, message) {
+export function broadcastToGame(gameId, message) {
     const players = gameConnections.get(gameId);
     if (!players) return;
 

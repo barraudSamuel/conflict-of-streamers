@@ -1,5 +1,22 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+export interface GameSettings {
+  attackDuration: number;
+  defenseDuration: number;
+  reinforcementDuration: number;
+  botBaseDefense: number;
+  botFrontierMultiplier: number;
+  messageAttackBonus: number;
+  messageDefenseBonus: number;
+  messageReinforcementBonus: number;
+  frontierAttackBonus: number;
+  frontierDefenseBonus: number;
+  conquestCooldown: number;
+  defenseCooldown: number;
+  pointsPerCommand: number;
+  maxPlayers: number;
+}
+
 export interface GameData {
   id: string;
   code: string;
@@ -7,6 +24,7 @@ export interface GameData {
   status: string;
   players: any[];
   territories: any[];
+  settings: GameSettings;
 }
 
 export interface GameResponse {
@@ -90,6 +108,30 @@ export async function assignTerritory(
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Failed to assign territory');
+  }
+
+  return response.json();
+}
+
+export async function updateGameSettings(
+  gameId: string,
+  adminId: string,
+  settings: Partial<GameSettings>
+): Promise<GameResponse> {
+  const response = await fetch(`${API_URL}/api/game/${gameId}/settings`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      adminId,
+      settings
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update settings');
   }
 
   return response.json();

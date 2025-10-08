@@ -1,5 +1,6 @@
 import GameManager from '../managers/GameManager.js';
 import AttackManager from '../managers/AttackManager.js';
+import { broadcastToGame } from '../websocket/socketHandler.js';
 
 export default async function gameRoutes(fastify) {
 
@@ -122,6 +123,37 @@ export default async function gameRoutes(fastify) {
             };
         } catch (error) {
             return reply.code(400).send({ error: error.message });
+        }
+    });
+
+    // Mettre à jour les paramètres de la partie
+    fastify.put('/:gameId/settings', async (request, reply) => {
+        try {
+            const { gameId } = request.params;
+            const { adminId, settings } = request.body;
+
+            if (!adminId) {
+                return reply.code(400).send({ error: 'adminId is required' });
+            }
+
+            if (typeof settings !== 'object' || settings === null) {
+                return reply.code(400).send({ error: 'settings must be an object' });
+            }
+
+            const game = GameManager.updateGameSettings(gameId, adminId, settings);
+
+            broadcastToGame(game.id, {
+                type: 'game:state',
+                game: game.toJSON()
+            });
+
+            return {
+                success: true,
+                game: game.toJSON()
+            };
+        } catch (error) {
+            const statusCode = error.message === 'Game not found' ? 404 : 400;
+            return reply.code(statusCode).send({ error: error.message });
         }
     });
 
