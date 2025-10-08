@@ -40,6 +40,7 @@ const containerClass = computed(() => ({
   'lobby-map-canvas': true,
   'lobby-map-canvas--game': mapAppearance.value === 'game'
 }))
+const showDefenseOverlay = computed(() => mapAppearance.value === 'game')
 
 const initialViewState = {
   longitude: 15,
@@ -101,7 +102,8 @@ const territoryState = computed(() => {
 })
 
 const defenseLabels = computed<DefenseLabelDatum[]>(() =>
-  props.territories
+  showDefenseOverlay.value
+    ? props.territories
     .map((territory) => {
       if (typeof territory.defensePower !== 'number') {
         return null
@@ -122,6 +124,7 @@ const defenseLabels = computed<DefenseLabelDatum[]>(() =>
       }
     })
     .filter((entry): entry is DefenseLabelDatum => entry !== null)
+    : []
 )
 
 const colorTrigger = computed(() =>
@@ -216,7 +219,7 @@ const tooltipFn = ({ object }: PickingInfo<DeckFeature>) => {
   const status = info?.ownerId ? `Contrôlé par ${info.ownerName}` : 'Disponible'
   lines.push(status)
 
-  if (typeof info?.defensePower === 'number' && info.defensePower > 0) {
+  if (showDefenseOverlay.value && typeof info?.defensePower === 'number' && info.defensePower > 0) {
     lines.push(`Défense: ${info.defensePower}`)
   }
 
@@ -299,7 +302,13 @@ const createDefenseLayer = () =>
     characterSet: 'auto'
   })
 
-const layers = computed(() => [createGeoLayer(), createDefenseLayer()])
+const layers = computed((): any[] => {
+  const baseLayers: any[] = [createGeoLayer()]
+  if (showDefenseOverlay.value) {
+    baseLayers.push(createDefenseLayer())
+  }
+  return baseLayers
+})
 
 onMounted(() => {
   if (!containerRef.value) return
@@ -327,7 +336,7 @@ watch(
   }
 )
 
-watch([layers, territoryState, defenseLabels], () => {
+watch([layers, territoryState, defenseLabels, showDefenseOverlay], () => {
   if (!deckInstance) return
   deckInstance.setProps({
     layers: layers.value
