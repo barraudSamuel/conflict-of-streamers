@@ -11,31 +11,6 @@ export type LobbyTerritoryCollection = FeatureCollection<LobbyGeometry, LobbyTer
 
 const rawCollection = geoJsonData as FeatureCollection<Geometry>
 
-const NAME_TO_ISO: Record<string, string> = {
-  France: 'FR',
-  Germany: 'DE',
-  Spain: 'ES',
-  Italy: 'IT',
-  'United Kingdom': 'GB',
-  Poland: 'PL',
-  Russia: 'RU',
-  'Russian Federation': 'RU',
-  'United States of America': 'US',
-  Canada: 'CA',
-  Mexico: 'MX',
-  Brazil: 'BR',
-  Argentina: 'AR',
-  China: 'CN',
-  India: 'IN',
-  Australia: 'AU',
-  Japan: 'JP',
-  Egypt: 'EG',
-  'South Africa': 'ZA',
-  Nigeria: 'NG',
-  Turkey: 'TR',
-  Ukraine: 'UA'
-}
-
 const normalizeFeature = (
   feature: Feature<Geometry, Record<string, unknown>>
 ): LobbyTerritoryFeature | null => {
@@ -78,10 +53,6 @@ const normalizeFeature = (
   const name =
     (typeof props.name === 'string' && props.name.trim().length > 0 ? props.name.trim() : code) ??
     'Unknown'
-
-  if (!code && NAME_TO_ISO[name]) {
-    code = NAME_TO_ISO[name]
-  }
 
   return {
     type: 'Feature',
