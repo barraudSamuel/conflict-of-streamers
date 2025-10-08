@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Deck } from '@deck.gl/core'
 import type { PickingInfo } from '@deck.gl/core'
-import { GeoJsonLayer } from '@deck.gl/layers'
+import { GeoJsonLayer, TextLayer } from '@deck.gl/layers'
 import {
   lobbyTerritories,
   type LobbyTerritoryCollection,
@@ -56,6 +56,16 @@ const DEFAULT_OCCUPIED_COLOR: [number, number, number, number] = [148, 163, 184,
 const DEFAULT_BORDER_COLOR: [number, number, number, number] = [30, 41, 59, 220]
 const CURRENT_PLAYER_BORDER_COLOR: [number, number, number, number] = [226, 232, 240, 255]
 const CURRENT_PLAYER_FALLBACK_COLOR: [number, number, number, number] = [34, 197, 94, 220]
+const BOT_OWNER_PREFIX = 'bot:'
+const BOT_OWNER_COLOR = '#64748b'
+const BOT_HIGHLIGHT_COLOR: [number, number, number, number] = [100, 116, 139, 210]
+
+interface DefenseLabelDatum {
+  position: [number, number]
+  defense: number
+  isCurrent: boolean
+  isBot: boolean
+}
 
 const territoryState = computed(() => {
   const state = new Map<
@@ -65,6 +75,7 @@ const territoryState = computed(() => {
       ownerName: string
       ownerColor: string | null
       defensePower?: number | null
+      isBot: boolean
     }
   >()
 
@@ -72,24 +83,53 @@ const territoryState = computed(() => {
 
   props.territories.forEach((territory) => {
     const ownerId = territory.ownerId ?? null
-    const owner = ownerId ? playerById.get(ownerId) : null
+    const isBot = typeof ownerId === 'string' && ownerId.startsWith(BOT_OWNER_PREFIX)
+    const owner = !isBot && ownerId ? playerById.get(ownerId) : null
+    const ownerName = isBot ? 'Faction IA' : owner?.twitchUsername ?? 'Disponible'
+    const ownerColor = isBot ? BOT_OWNER_COLOR : owner?.color ?? null
 
     state.set(territory.id, {
       ownerId,
-      ownerName: owner?.twitchUsername ?? 'Disponible',
-      ownerColor: owner?.color ?? null,
-      defensePower: territory.defensePower ?? null
+      ownerName,
+      ownerColor,
+      defensePower: territory.defensePower ?? null,
+      isBot
     })
   })
 
   return state
 })
 
+const defenseLabels = computed<DefenseLabelDatum[]>(() =>
+  props.territories
+    .map((territory) => {
+      if (typeof territory.defensePower !== 'number') {
+        return null
+      }
+
+      const feature = territoryFeatureLookup.get(territory.id)
+      const labelPosition = feature?.properties?.labelPosition
+      if (!labelPosition || !Array.isArray(labelPosition) || labelPosition.length < 2) {
+        return null
+      }
+
+      const info = territoryState.value.get(territory.id)
+      return {
+        position: labelPosition as [number, number],
+        defense: territory.defensePower,
+        isCurrent: info?.ownerId === props.currentPlayerId,
+        isBot: info?.isBot ?? false
+      }
+    })
+    .filter((entry): entry is DefenseLabelDatum => entry !== null)
+)
+
 const colorTrigger = computed(() =>
   props.territories
     .map((territory) => {
       const playerColor = props.players.find((player) => player.id === territory.ownerId)?.color ?? ''
-      return `${territory.id}:${territory.ownerId ?? 'none'}:${playerColor}`
+      const defense = typeof territory.defensePower === 'number' ? territory.defensePower : 'na'
+      return `${territory.id}:${territory.ownerId ?? 'none'}:${playerColor}:${defense}`
     })
     .join('|')
 )
@@ -97,6 +137,9 @@ const colorTrigger = computed(() =>
 type DeckFeature = LobbyTerritoryFeature
 
 const featureCollection: LobbyTerritoryCollection = lobbyTerritories
+const territoryFeatureLookup = new Map(
+  featureCollection.features.map((feature) => [feature.properties?.id ?? '', feature])
+)
 
 const hexToRgba = (hex: string | null | undefined, alpha: number): [number, number, number, number] => {
   if (!hex) {
@@ -139,6 +182,10 @@ const computeFillColor = (feature: DeckFeature) => {
     return info.ownerColor ? hexToRgba(info.ownerColor, 235) : CURRENT_PLAYER_FALLBACK_COLOR
   }
 
+  if (info.isBot) {
+    return hexToRgba(info.ownerColor, 210)
+  }
+
   return hexToRgba(info.ownerColor, 210)
 }
 
@@ -149,6 +196,9 @@ const computeLineColor = (feature: DeckFeature) => {
   }
 
   const info = territoryState.value.get(territoryId)
+  if (info?.isBot) {
+    return BOT_HIGHLIGHT_COLOR
+  }
   if (info?.ownerId === props.currentPlayerId) {
     return CURRENT_PLAYER_BORDER_COLOR
   }
@@ -162,10 +212,16 @@ const tooltipFn = ({ object }: PickingInfo<DeckFeature>) => {
   const territoryId = object.properties.id
   const info = territoryState.value.get(territoryId)
 
+  const lines = [object.properties.name]
   const status = info?.ownerId ? `Contrôlé par ${info.ownerName}` : 'Disponible'
+  lines.push(status)
+
+  if (typeof info?.defensePower === 'number' && info.defensePower > 0) {
+    lines.push(`Défense: ${info.defensePower}`)
+  }
 
   return {
-    text: `${object.properties.name}\n${status}`
+    text: lines.join('\n')
   }
 }
 
@@ -218,7 +274,32 @@ const createGeoLayer = () =>
     }
   })
 
-const layers = computed(() => [createGeoLayer()])
+const createDefenseLayer = () =>
+  new TextLayer<DefenseLabelDatum>({
+    id: 'territory-defense-labels',
+    data: defenseLabels.value,
+    billboard: false,
+    getPosition: (item) => item.position,
+    getText: (item) => `🛡 ${item.defense}`,
+    getColor: (item) => {
+      if (item.isCurrent) {
+        return [248, 250, 252, 255]
+      }
+      if (item.isBot) {
+        return [148, 163, 184, 255]
+      }
+      return [226, 232, 240, 255]
+    },
+    getSize: () => (mapAppearance.value === 'game' ? 18 : 14),
+    sizeUnits: 'pixels',
+    sizeMinPixels: 12,
+    sizeMaxPixels: 28,
+    getTextAnchor: () => 'middle',
+    getAlignmentBaseline: () => 'center',
+    characterSet: 'auto'
+  })
+
+const layers = computed(() => [createGeoLayer(), createDefenseLayer()])
 
 onMounted(() => {
   if (!containerRef.value) return
@@ -246,7 +327,7 @@ watch(
   }
 )
 
-watch([layers, territoryState], () => {
+watch([layers, territoryState, defenseLabels], () => {
   if (!deckInstance) return
   deckInstance.setProps({
     layers: layers.value

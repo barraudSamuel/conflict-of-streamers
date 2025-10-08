@@ -5,11 +5,66 @@ type LobbyGeometry = Polygon | MultiPolygon
 export interface LobbyTerritoryProperties {
   id: string
   name: string
+  labelPosition: [number, number]
 }
 export type LobbyTerritoryFeature = Feature<LobbyGeometry, LobbyTerritoryProperties>
 export type LobbyTerritoryCollection = FeatureCollection<LobbyGeometry, LobbyTerritoryProperties>
 
 const rawCollection = geoJsonData as FeatureCollection<Geometry>
+
+const computeCentroid = (geometry: LobbyGeometry): [number, number] | null => {
+  let sumLon = 0
+  let sumLat = 0
+  let count = 0
+
+  const accumulateRing = (ring: number[][]) => {
+    for (const coordinate of ring) {
+      if (!Array.isArray(coordinate) || coordinate.length < 2) {
+        continue
+      }
+      const [lon, lat] = coordinate as [number, number]
+      if (Number.isFinite(lon) && Number.isFinite(lat)) {
+        sumLon += lon
+        sumLat += lat
+        count += 1
+      }
+    }
+  }
+
+  if (geometry.type === 'Polygon') {
+    const outerRing = geometry.coordinates[0]
+    if (Array.isArray(outerRing)) {
+      accumulateRing(outerRing)
+    }
+  } else if (geometry.type === 'MultiPolygon') {
+    for (const polygon of geometry.coordinates) {
+      const outerRing = polygon[0]
+      if (Array.isArray(outerRing)) {
+        accumulateRing(outerRing)
+      }
+    }
+  }
+
+  if (count === 0) {
+    return null
+  }
+
+  return [sumLon / count, sumLat / count]
+}
+
+const computeLabelPosition = (
+  props: Record<string, unknown>,
+  geometry: LobbyGeometry
+): [number, number] | null => {
+  const labelLon = typeof props.label_x === 'number' ? props.label_x : null
+  const labelLat = typeof props.label_y === 'number' ? props.label_y : null
+
+  if (labelLon !== null && labelLat !== null && Number.isFinite(labelLon) && Number.isFinite(labelLat)) {
+    return [labelLon, labelLat]
+  }
+
+  return computeCentroid(geometry)
+}
 
 const normalizeFeature = (
   feature: Feature<Geometry, Record<string, unknown>>
@@ -54,12 +109,18 @@ const normalizeFeature = (
     (typeof props.name === 'string' && props.name.trim().length > 0 ? props.name.trim() : code) ??
     'Unknown'
 
+  const labelPosition = computeLabelPosition(props, geometry)
+  if (!labelPosition) {
+    return null
+  }
+
   return {
     type: 'Feature',
     geometry,
     properties: {
       id: code ?? name,
-      name
+      name,
+      labelPosition
     }
   }
 }

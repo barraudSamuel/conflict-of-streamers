@@ -94,6 +94,42 @@ export class Game {
         this.initializeTerritories();
     }
 
+    getBotOwnerId(territoryId) {
+        return `bot:${territoryId}`;
+    }
+
+    isBotTerritory(territory) {
+        return typeof territory.ownerId === 'string' && territory.ownerId.startsWith('bot:');
+    }
+
+    assignBotDefenses() {
+        const baseDefense = typeof this.settings.botBaseDefense === 'number'
+            ? this.settings.botBaseDefense
+            : DEFAULT_SETTINGS.botBaseDefense;
+        const frontierMultiplier = typeof this.settings.botFrontierMultiplier === 'number'
+            ? this.settings.botFrontierMultiplier
+            : DEFAULT_SETTINGS.botFrontierMultiplier;
+
+        for (let territory of this.territories.values()) {
+            if (!territory.ownerId) {
+                const borders = Array.isArray(territory.neighbors) ? territory.neighbors : [];
+                const defenseValue = Math.round(baseDefense * (1 + frontierMultiplier * borders.length));
+
+                territory.ownerId = this.getBotOwnerId(territory.id);
+                territory.attackPower = 0;
+                territory.defensePower = defenseValue;
+                territory.isBotControlled = true;
+            } else if (this.isBotTerritory(territory)) {
+                // Ensure pre-existing bot-controlled territories get refreshed values
+                const borders = Array.isArray(territory.neighbors) ? territory.neighbors : [];
+                territory.defensePower = Math.round(baseDefense * (1 + frontierMultiplier * borders.length));
+                territory.isBotControlled = true;
+            } else {
+                territory.isBotControlled = false;
+            }
+        }
+    }
+
     generateCode() {
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         let code = '';
@@ -181,6 +217,7 @@ export class Game {
         }
         this.status = 'playing';
         this.startedAt = Date.now();
+        this.assignBotDefenses();
     }
 
     endGame() {
