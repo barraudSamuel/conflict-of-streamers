@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { Button } from '@/components/ui/button'
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
+import {Button} from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@/components/ui/card'
 import LobbyDeckMap from '@/components/maps/LobbyDeckMap.vue'
-import { createGameSocket, sendSocketMessage, type SocketMessage } from '@/services/socket'
-import { getGame, leaveGame as leaveGameRequest } from '@/services/api'
-import { clearPlayerContext, loadPlayerContext, type PlayerContext } from '@/lib/playerStorage'
+import {createGameSocket, sendSocketMessage, type SocketMessage} from '@/services/socket'
+import {getGame, leaveGame as leaveGameRequest} from '@/services/api'
+import {clearPlayerContext, loadPlayerContext, type PlayerContext} from '@/lib/playerStorage'
 import {
   Crown,
   Gamepad2,
@@ -83,37 +90,12 @@ const playersSummary = computed<PlayerSummary[]>(() => {
   })
 })
 
-const startedAtLabel = computed(() => {
-  if (!game.value?.startedAt) return 'Préparation'
-  try {
-    const date = new Date(game.value.startedAt)
-    return new Intl.DateTimeFormat('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date)
-  } catch {
-    return 'En cours'
-  }
-})
-
-const statusLabel = computed(() => {
-  switch (game.value?.status) {
-    case 'playing':
-      return 'Partie en cours'
-    case 'finished':
-      return 'Partie terminée'
-    case 'lobby':
-    default:
-      return 'Préparation'
-  }
-})
-
 const connectionStatusLabel = computed(() =>
-  realtimeConnected.value ? 'Connecté au serveur temps réel' : 'Reconnexion...'
+    realtimeConnected.value ? 'Connecté au serveur temps réel' : 'Reconnexion...'
 )
 
 const connectedPlayerCount = computed(() =>
-  Object.values(playerConnections.value).filter(Boolean).length
+    Object.values(playerConnections.value).filter(Boolean).length
 )
 
 const adminLabel = computed(() => game.value?.adminTwitchUsername ?? 'Admin')
@@ -133,12 +115,12 @@ const setPlayerConnection = (playerId: string, connected: boolean) => {
 }
 
 const removePlayerConnection = (playerId: string) => {
-  const { [playerId]: _removed, ...rest } = playerConnections.value
+  const {[playerId]: _removed, ...rest} = playerConnections.value
   playerConnections.value = rest
 }
 
 const ensurePlayerConnections = (players: any[]) => {
-  const next: Record<string, boolean> = { ...playerConnections.value }
+  const next: Record<string, boolean> = {...playerConnections.value}
   const ids = new Set<string>()
 
   players.forEach((player: any) => {
@@ -173,7 +155,7 @@ const handleSocketMessage = (message: SocketMessage) => {
       realtimeConnected.value = true
       socketError.value = ''
       if (Array.isArray(message.connectedPlayerIds)) {
-        const next = { ...playerConnections.value }
+        const next = {...playerConnections.value}
         message.connectedPlayerIds.forEach((id: string) => {
           next[id] = true
         })
@@ -181,7 +163,7 @@ const handleSocketMessage = (message: SocketMessage) => {
       } else if (currentPlayerId.value) {
         setPlayerConnection(currentPlayerId.value, true)
       }
-      sendSocketMessage(socket.value, 'game:update', { gameId })
+      sendSocketMessage(socket.value, 'game:update', {gameId})
       break
     case 'game:state':
     case 'game:started':
@@ -302,20 +284,20 @@ const handleLeaveGame = async () => {
     }
   } catch (err) {
     leaveError.value =
-      err instanceof Error ? err.message : 'Impossible de quitter la partie pour le moment.'
+        err instanceof Error ? err.message : 'Impossible de quitter la partie pour le moment.'
   } finally {
     leavingGame.value = false
   }
 }
 
 watch(
-  () => game.value?.status,
-  (status) => {
-    if (!status || !game.value?.id) return
-    if (status === 'lobby') {
-      router.replace(`/lobby/${game.value.id}`)
+    () => game.value?.status,
+    (status) => {
+      if (!status || !game.value?.id) return
+      if (status === 'lobby') {
+        router.replace(`/lobby/${game.value.id}`)
+      }
     }
-  }
 )
 
 onMounted(async () => {
@@ -365,135 +347,139 @@ onBeforeUnmount(() => {
     <div v-else-if="game" class="relative min-h-screen">
       <div class="absolute inset-0">
         <LobbyDeckMap
-          appearance="game"
-          :territories="game.territories ?? []"
-          :players="game.players ?? []"
-          :current-player-id="currentPlayerId"
-          :disable-interaction="true"
+            appearance="game"
+            :territories="game.territories ?? []"
+            :players="game.players ?? []"
+            :current-player-id="currentPlayerId"
+            :disable-interaction="true"
         />
       </div>
 
       <div class="pointer-events-none absolute inset-0 flex flex-col">
-        <header class="pointer-events-auto mx-auto mt-6 w-full max-w-5xl rounded-3xl bg-slate-900/75 px-6 py-5 shadow-xl ring-1 ring-white/10 backdrop-blur">
-          <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div class="space-y-2">
-              <div class="flex items-center gap-2 text-lg font-semibold uppercase tracking-wide text-slate-200">
-                <Gamepad2 class="size-5 text-primary" />
-                <span>{{ statusLabel }}</span>
-              </div>
-              <div class="text-sm text-slate-300">
-                <span class="font-semibold text-slate-100">Code:</span>
-                <span class="ml-2 font-mono tracking-[0.3em] text-slate-200">{{ game.code }}</span>
-              </div>
-              <div class="flex flex-wrap items-center gap-3 text-sm text-slate-300">
-                <div class="flex items-center gap-2">
-                  <Crown class="size-4 text-yellow-400" />
+        <Card
+            class="pointer-events-auto mt-6 w-full max-w-5xl bg-card/70 backdrop-blur shadow-xl ring-1 ring-white/10 mx-auto">
+          <CardContent>
+            <div class="flex items-center justify-between">
+              <div class="flex flex-col gap-1">
+                <CardTitle class="flex items-center gap-2 text-lg font-semibold uppercase tracking-wide">
+                  <Gamepad2 class="size-5 text-primary"/>
+                  <span>En jeu</span>
+                </CardTitle>
+                <div class="flex flex-wrap items-center gap-3 text-sm">
+                <span class="flex items-center gap-2">
+                  <Crown class="size-4 text-yellow-400"/>
                   <span>Host: <span class="font-semibold text-slate-100">{{ adminLabel }}</span></span>
-                </div>
-                <div class="flex items-center gap-2">
-                  <Users class="size-4 text-emerald-300" />
+                </span>
+                  <span class="flex items-center gap-2">
+                  <Users class="size-4 text-emerald-300"/>
                   <span>{{ playersSummary.length }} joueurs ({{ connectedPlayerCount }}/{{ playersSummary.length }} connectés)</span>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="size-2 rounded-full" :class="realtimeConnected ? 'bg-emerald-400' : 'bg-amber-300'"></span>
+                </span>
+                  <span class="flex items-center gap-2">
+                  <component :is="realtimeConnected ? SignalHigh : SignalLow" class="size-4"/>
                   <span>{{ connectionStatusLabel }}</span>
+                </span>
                 </div>
               </div>
-            </div>
-
-            <div class="flex flex-col gap-3 text-sm text-slate-300">
-              <div class="flex items-center gap-2">
-                <component :is="realtimeConnected ? SignalHigh : SignalLow" class="size-5" />
-                <span>Début: {{ startedAtLabel }}</span>
-              </div>
-              <div class="flex items-center gap-2">
+              <div class="flex flex-col gap-2 text-sm text-slate-300 md:flex-row md:items-center md:justify-end">
                 <Button
-                  variant="outline"
-                  class="pointer-events-auto"
-                  @click="handleLeaveGame"
-                  :disabled="leavingGame"
+                    variant="outline"
+                    class="pointer-events-auto w-full justify-center md:w-auto"
+                    @click="handleLeaveGame"
+                    :disabled="leavingGame"
                 >
-                  <LogOut class="size-4" />
+                  <LogOut class="size-4"/>
                   <span v-if="!leavingGame">Quitter la partie</span>
                   <span v-else>Déconnexion...</span>
                 </Button>
+                <p v-if="leaveError" class="text-xs text-red-400 md:text-right">{{ leaveError }}</p>
+                <p v-else-if="socketError" class="text-xs text-amber-300 md:text-right">{{ socketError }}</p>
               </div>
-              <p v-if="leaveError" class="text-xs text-red-400">{{ leaveError }}</p>
-              <p v-else-if="socketError" class="text-xs text-amber-300">{{ socketError }}</p>
             </div>
-          </div>
-        </header>
+          </CardContent>
+        </Card>
 
         <main class="relative flex flex-1">
-          <aside class="pointer-events-auto absolute left-4 right-4 top-[180px] z-10 mx-auto flex w-full max-w-md flex-col gap-4 sm:left-6 sm:right-auto sm:top-28 sm:w-80">
-            <div class="rounded-3xl bg-slate-900/80 p-5 shadow-lg ring-1 ring-white/10 backdrop-blur">
-              <div class="mb-4 flex items-center justify-between">
-                <div class="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-300">
-                  <Users class="size-4 text-emerald-300" />
-                  <span>Joueurs</span>
+          <aside
+              class="pointer-events-auto absolute left-4 right-4 top-[180px] z-10 mx-auto flex w-full max-w-md flex-col gap-4 sm:left-6 sm:right-auto sm:top-28 sm:w-80">
+            <Card class="bg-card/70 shadow-lg ring-1 ring-white/10 backdrop-blur">
+              <CardHeader>
+                <div class="flex items-center justify-between">
+                  <CardTitle
+                      class="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide">
+                    <Users class="size-4 text-emerald-300"/>
+                    <span>Joueurs</span>
+                  </CardTitle>
+                  <CardDescription class="text-xs">Classement provisoire</CardDescription>
                 </div>
-                <span class="text-xs text-slate-400">Classement provisoire</span>
-              </div>
-              <ul class="space-y-3">
-                <li
-                  v-for="player in playersSummary"
-                  :key="player.id"
-                  class="flex items-center justify-between rounded-xl bg-slate-900/80 px-3 py-3 ring-1 ring-white/5 transition hover:ring-white/15"
-                  :class="player.isCurrent ? 'outline outline-1 outline-primary/80' : ''"
-                >
-                  <div class="flex items-center gap-3">
-                    <span
-                      class="size-3 rounded-full ring-2 ring-white/30"
-                      :style="{ backgroundColor: player.color || '#94a3b8' }"
-                    ></span>
-                    <div class="flex flex-col leading-tight">
-                      <span class="text-sm font-semibold text-slate-100">
-                        {{ player.twitchUsername }}
-                        <span v-if="player.isAdmin" class="ml-1 text-xs uppercase text-yellow-400">Host</span>
-                        <span v-else-if="player.isCurrent" class="ml-1 text-xs uppercase text-primary">Vous</span>
-                      </span>
-                      <span class="text-xs text-slate-400">
-                        Territoires: {{ player.territories }} • Score: {{ player.score }}
-                      </span>
+              </CardHeader>
+              <CardContent class="pt-0">
+                <ul class="space-y-3">
+                  <li
+                      v-for="player in playersSummary"
+                      :key="player.id"
+                      class="flex items-center justify-between rounded-xl border border-white/5 bg-card/70 px-3 py-3 transition hover:border-white/20"
+                      :class="player.isCurrent ? 'outline outline-1 outline-primary/80' : ''"
+                  >
+                    <div class="flex items-center gap-3">
+                      <span
+                          class="size-3 rounded-full ring-2 ring-white/30"
+                          :style="{ backgroundColor: player.color || '#94a3b8' }"
+                      ></span>
+                      <div class="flex flex-col leading-tight">
+                        <span class="text-sm font-semibold text-slate-100">
+                          {{ player.twitchUsername }}
+                          <span v-if="player.isAdmin" class="ml-1 text-xs uppercase text-yellow-400">Host</span>
+                          <span v-else-if="player.isCurrent" class="ml-1 text-xs uppercase text-primary">Vous</span>
+                        </span>
+                        <span class="text-xs text-slate-400">
+                          Territoires: {{ player.territories }} • Score: {{ player.score }}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <span
-                    class="size-2 rounded-full"
-                    :class="player.connected ? 'bg-emerald-400' : 'bg-slate-500'"
-                    :title="player.connected ? 'Connecté' : 'Déconnecté'"
-                  ></span>
-                </li>
-              </ul>
-            </div>
+                    <span
+                        class="size-2 rounded-full"
+                        :class="player.connected ? 'bg-emerald-400' : 'bg-slate-500'"
+                        :title="player.connected ? 'Connecté' : 'Déconnecté'"
+                    ></span>
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
           </aside>
 
           <section class="pointer-events-none flex flex-1 flex-col justify-end">
-            <div class="pointer-events-auto mx-auto mb-8 w-full max-w-4xl space-y-4 rounded-3xl bg-slate-900/80 px-6 py-5 shadow-2xl ring-1 ring-white/10 backdrop-blur">
-              <div class="flex items-center justify-between flex-wrap gap-3 text-sm text-slate-300">
-                <div class="flex items-center gap-2 font-semibold uppercase tracking-wide text-slate-200">
-                  <Swords class="size-5 text-primary" />
-                  <span>Commandes de jeu</span>
+            <Card
+                class="pointer-events-auto mx-auto mb-8 w-full max-w-4xl bg-card/70 ring-1 ring-white/10 backdrop-blur">
+              <CardHeader class="pb-3">
+                <div class="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
+                  <CardTitle class="flex items-center gap-2 font-semibold uppercase tracking-wide text-slate-200">
+                    <Swords class="size-5 text-primary"/>
+                    <span>Commandes de jeu</span>
+                  </CardTitle>
+                  <CardDescription class="text-xs text-slate-400">Gameplay bientôt disponible</CardDescription>
                 </div>
-                <span class="text-xs text-slate-400">Gameplay bientôt disponible</span>
-              </div>
-              <div class="flex flex-wrap items-center justify-center gap-4">
-                <Button variant="secondary" size="lg" disabled class="h-12 px-8 text-base opacity-70">
-                  <Swords class="size-5" />
-                  Attaquer
-                </Button>
-                <Button variant="secondary" size="lg" disabled class="h-12 px-8 text-base opacity-70">
-                  <Shield class="size-5" />
-                  Défendre
-                </Button>
-                <Button variant="secondary" size="lg" disabled class="h-12 px-8 text-base opacity-70">
-                  <PlusCircle class="size-5" />
-                  Renforcer
-                </Button>
-              </div>
-              <p class="text-center text-xs text-slate-300">
-                Les commandes seront activées prochainement. Préparez votre stratégie pendant la phase de pré-production.
-              </p>
-            </div>
+              </CardHeader>
+              <CardContent class="space-y-4">
+                <div class="flex flex-wrap items-center justify-center gap-4">
+                  <Button variant="secondary" size="lg" disabled class="h-12 px-8 text-base opacity-70">
+                    <Swords class="size-5"/>
+                    Attaquer
+                  </Button>
+                  <Button variant="secondary" size="lg" disabled class="h-12 px-8 text-base opacity-70">
+                    <Shield class="size-5"/>
+                    Défendre
+                  </Button>
+                  <Button variant="secondary" size="lg" disabled class="h-12 px-8 text-base opacity-70">
+                    <PlusCircle class="size-5"/>
+                    Renforcer
+                  </Button>
+                </div>
+                <p class="text-center text-xs text-slate-300">
+                  Les commandes seront activées prochainement. Préparez votre stratégie pendant la phase de
+                  pré-production.
+                </p>
+              </CardContent>
+            </Card>
           </section>
         </main>
       </div>
