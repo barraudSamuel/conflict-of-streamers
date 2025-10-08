@@ -5,9 +5,15 @@ import { useClipboard } from '@vueuse/core'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getGame, startGame as startGameRequest, leaveGame as leaveGameRequest } from '@/services/api'
+import {
+  getGame,
+  startGame as startGameRequest,
+  leaveGame as leaveGameRequest,
+  assignTerritory
+} from '@/services/api'
 import { createGameSocket, sendSocketMessage, type SocketMessage } from '@/services/socket'
 import { clearPlayerContext, loadPlayerContext, type PlayerContext } from '@/lib/playerStorage'
+import LobbyDeckMap from '@/components/maps/LobbyDeckMap.vue'
 import {
   Gamepad2,
   Crown,
@@ -227,6 +233,15 @@ const territoriesByOwner = computed<Record<string, number>>(() => {
     return acc
   }, {})
 })
+const territoryNameByOwner = computed<Record<string, string>>(() => {
+  if (!game.value?.territories) return {}
+  return (game.value.territories as any[]).reduce((acc: Record<string, string>, territory: any) => {
+    if (territory.ownerId) {
+      acc[territory.ownerId] = territory.name || territory.id
+    }
+    return acc
+  }, {})
+})
 const selectedCountriesCount = computed(() => {
   if (!game.value?.players) return 0
   return game.value.players.filter((player: any) => territoriesByOwner.value[player.id]).length
@@ -245,6 +260,20 @@ const canStart = computed(
   () =>
     isCurrentPlayerAdmin.value && game.value?.status === 'lobby' && meetsStartRequirements.value
 )
+
+const currentPlayerTerritory = computed(() => {
+  if (!game.value?.territories) return null
+  return (game.value.territories as any[]).find(
+    (territory: any) => territory.ownerId === currentPlayerId.value
+  )
+})
+const currentPlayerTerritoryName = computed(() => currentPlayerTerritory.value?.name ?? '')
+const canSelectTerritory = computed(
+  () => game.value?.status === 'lobby' && Boolean(playerContext.value?.playerId)
+)
+
+const territorySelectionError = ref('')
+const selectingTerritory = ref(false)
 
 const source = computed(() => game.value?.code ?? '')
 const { copy, copied } = useClipboard({ source })
@@ -320,6 +349,7 @@ const handleLeaveGame = async () => {
 }
 
 const playerHasTerritory = (playerId: string) => Boolean(territoriesByOwner.value[playerId])
+const playerTerritoryName = (playerId: string) => territoryNameByOwner.value[playerId] ?? ''
 const isPlayerConnected = (playerId: string) => playerConnections.value[playerId] === true
 const isCurrentPlayer = (playerId: string) => playerId === currentPlayerId.value
 
@@ -352,6 +382,54 @@ const handleStartGame = async () => {
       err instanceof Error ? err.message : 'Impossible de démarrer la partie pour le moment.'
   } finally {
     startingGame.value = false
+  }
+}
+
+const handleTerritorySelect = async (territoryId: string) => {
+  territorySelectionError.value = ''
+
+  if (!game.value || !canSelectTerritory.value || selectingTerritory.value) {
+    return
+  }
+
+  const playerId = playerContext.value?.playerId
+  if (!playerId) {
+    territorySelectionError.value = 'Session invalide. Veuillez recharger la page.'
+    return
+  }
+
+  const territories: any[] = Array.isArray(game.value.territories) ? game.value.territories : []
+  const targetTerritory = territories.find((territory: any) => territory.id === territoryId)
+
+  if (!targetTerritory) {
+    territorySelectionError.value = 'Territoire inconnu.'
+    return
+  }
+
+  if (targetTerritory.ownerId && targetTerritory.ownerId !== playerId) {
+    territorySelectionError.value = 'Ce territoire est déjà contrôlé par un autre joueur.'
+    return
+  }
+
+  if (targetTerritory.ownerId === playerId) {
+    return
+  }
+
+  selectingTerritory.value = true
+
+  try {
+    const response = await assignTerritory(game.value.id, playerId, territoryId)
+    game.value = response.game
+    ensurePlayerConnections(response.game?.players ?? [])
+
+    if (response.game?.id) {
+      sendSocketMessage(socket.value, 'game:update', { gameId: response.game.id })
+    }
+  } catch (err) {
+    territorySelectionError.value =
+      err instanceof Error ? err.message : 'Impossible de sélectionner ce territoire.'
+  } finally {
+    selectingTerritory.value = false
   }
 }
 </script>
@@ -429,35 +507,50 @@ const handleStartGame = async () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div class="relative rounded-lg overflow-hidden flex items-center justify-center">
-                <img
-                  src="/world-map-placeholder.svg"
-                  alt="Carte du monde"
-                  class="w-full h-full rounded object-cover min-h-[400px]"
+              <div class="relative rounded-lg overflow-hidden">
+                <LobbyDeckMap
+                  :territories="game.territories ?? []"
+                  :players="game.players ?? []"
+                  :current-player-id="currentPlayerId"
+                  :disable-interaction="!canSelectTerritory || selectingTerritory"
+                  @select="handleTerritorySelect"
                 />
 
-                <div class="absolute bottom-4 left-4 bg-card text-card-foreground rounded-xl p-4 space-y-2">
-                  <div class="font-semibold mb-2">Légende</div>
-                  <div class="flex items-center gap-2 text-sm">
-                    <div class="w-4 h-4 bg-slate-400 rounded-sm"></div>
-                    <span>Pays disponibles</span>
-                  </div>
-                  <div class="flex items-center gap-2 text-sm">
-                    <div class="w-4 h-4 bg-destructive rounded-sm"></div>
-                    <span>Pays pris</span>
-                  </div>
-                  <div class="flex items-center gap-2 text-sm">
-                    <div class="w-4 h-4 bg-slate-700 rounded-sm"></div>
-                    <span>Non sélectionnable</span>
+                <div class="pointer-events-none absolute top-4 left-4 flex">
+                  <div class="pointer-events-auto flex gap-3 rounded-xl bg-slate-900/75 px-4 py-3 text-xs text-slate-300 backdrop-blur">
+                    <div class="flex items-center gap-2">
+                      <div class="size-3 rounded-sm bg-slate-500/70"></div>
+                      <span>Disponible</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div
+                        class="size-3 rounded-sm"
+                        style="background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #8b5cf6, #ec4899)"
+                      ></div>
+                      <span>Occupé</span>
+                    </div>
                   </div>
                 </div>
+
               </div>
 
-              <div class="mt-4 flex items-start gap-2 bg-accent rounded-sm p-3 text-sm">
-                <span>⚠️</span>
-                <span class="text-muted-foreground"
-                  >👉 Cliquez sur un pays disponible (en gris) pour le sélectionner</span
-                >
+              <div class="mt-4 space-y-2 text-sm text-muted-foreground">
+                <p v-if="territorySelectionError" class="text-destructive">
+                  {{ territorySelectionError }}
+                </p>
+                <p v-else-if="selectingTerritory" class="flex items-center gap-2 text-foreground">
+                  <span class="size-4 animate-spin rounded-full border-2 border-muted/40 border-t-foreground"></span>
+                  <span>Sélection du territoire en cours...</span>
+                </p>
+                <p v-else-if="!canSelectTerritory" class="text-muted-foreground">
+                  La sélection est verrouillée pendant la partie. Patientez jusqu'à la prochaine manche.
+                </p>
+                <p v-else-if="currentPlayerTerritoryName">
+                  🌍 Vous contrôlez actuellement <span class="font-semibold text-foreground">{{ currentPlayerTerritoryName }}</span>.
+                </p>
+                <p v-else>
+                  ⚠️ Aucun territoire attribué pour l'instant. Sélectionnez un pays pour être prêt au lancement.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -569,7 +662,7 @@ const handleStartGame = async () => {
                         </div>
                         <div class="text-sm text-muted-foreground flex items-center gap-1">
                           <template v-if="playerHasTerritory(player.id)">
-                            ✓ Pays sélectionné
+                            {{ playerTerritoryName(player.id) }}
                           </template>
                           <template v-else>⏳ Choix en cours...</template>
                         </div>

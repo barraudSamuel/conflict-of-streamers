@@ -71,6 +71,30 @@ export async function getGame(gameId: string): Promise<GameResponse> {
   return response.json();
 }
 
+export async function assignTerritory(
+  gameId: string,
+  playerId: string,
+  territoryId: string
+): Promise<GameResponse> {
+  const response = await fetch(`${API_URL}/api/game/${gameId}/territory`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      playerId,
+      territoryId
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to assign territory');
+  }
+
+  return response.json();
+}
+
 export async function startGame(gameId: string, adminId: string): Promise<GameResponse> {
   const response = await fetch(`${API_URL}/api/game/${gameId}/start`, {
     method: 'POST',
