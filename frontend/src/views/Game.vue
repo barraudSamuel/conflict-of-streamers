@@ -13,18 +13,17 @@ import {Kbd} from '@/components/ui/kbd'
 import {ScrollArea} from '@/components/ui/scroll-area'
 import LobbyDeckMap from '@/components/maps/LobbyDeckMap.vue'
 import {createGameSocket, sendSocketMessage, type SocketMessage} from '@/services/socket'
-import {getGame, leaveGame as leaveGameRequest} from '@/services/api'
+import {getGame, leaveGame as leaveGameRequest, validateAttack} from '@/services/api'
 import {clearPlayerContext, loadPlayerContext, type PlayerContext} from '@/lib/playerStorage'
 import {
   Crown,
   Gamepad2,
   LogOut,
-  Shield,
   SignalHigh,
   SignalLow,
   Swords,
   Users,
-  PlusCircle
+  OctagonMinus
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -42,6 +41,11 @@ const playerContext = ref<PlayerContext | null>(null)
 const leavingGame = ref(false)
 const leaveError = ref('')
 const scoreboardVisible = ref(false)
+const selectedOwnedTerritoryId = ref<string | null>(null)
+const targetTerritoryId = ref<string | null>(null)
+const attackError = ref('')
+const attackLoading = ref(false)
+const lastAttackResult = ref<{ attack: any; outcome: 'win' | 'loss' | 'draw' } | null>(null)
 
 let reconnectTimer: number | null = null
 let manualDisconnect = false
@@ -139,6 +143,215 @@ const gameInfoItems = computed(() => {
   return items
 })
 
+const playersById = computed(() => {
+  const registry = new Map<string, any>()
+  if (!Array.isArray(game.value?.players)) {
+    return registry
+  }
+
+  game.value.players.forEach((player: any) => {
+    if (player?.id) {
+      registry.set(player.id, player)
+    }
+  })
+
+  return registry
+})
+
+const territoriesById = computed(() => {
+  const registry = new Map<string, any>()
+  if (!Array.isArray(game.value?.territories)) {
+    return registry
+  }
+
+  game.value.territories.forEach((territory: any) => {
+    if (territory?.id) {
+      registry.set(territory.id, territory)
+    }
+  })
+
+  return registry
+})
+
+const getTerritory = (territoryId: string | null | undefined) => {
+  if (!territoryId) return null
+  return territoriesById.value.get(territoryId) ?? null
+}
+
+const currentPlayerColor = computed(() => {
+  const player = playersById.value.get(currentPlayerId.value)
+  if (player && typeof player.color === 'string' && player.color.trim() !== '') {
+    return player.color
+  }
+  return '#22c55e'
+})
+
+const otherPlayerLegendEntries = computed(() => {
+  const seenColors = new Set<string>()
+  const entries: Array<{ id: string; label: string; color: string }> = []
+
+  playersSummary.value.forEach((player) => {
+    if (player.isCurrent) return
+    const color = typeof player.color === 'string' && player.color.trim() !== '' ? player.color : '#94a3b8'
+    if (seenColors.has(color)) return
+    seenColors.add(color)
+    entries.push({
+      id: player.id,
+      label: player.twitchUsername ?? 'Joueur',
+      color
+    })
+  })
+
+  if (entries.length === 0) {
+    entries.push({
+      id: 'others',
+      label: 'Autres joueurs',
+      color: '#64748b'
+    })
+  }
+
+  return entries
+})
+
+const BOT_LEGEND_COLOR = '#64748b'
+
+const selectedOwnedTerritory = computed(() => getTerritory(selectedOwnedTerritoryId.value))
+const targetTerritory = computed(() => getTerritory(targetTerritoryId.value))
+
+const selectedOwnedNeighbors = computed<any[]>(() => {
+  const selected = selectedOwnedTerritory.value
+  if (!selected || !Array.isArray(selected.neighbors)) return []
+  return selected.neighbors
+    .map((id: string) => getTerritory(id))
+    .filter((item): item is any => item !== null)
+})
+
+const potentialTargets = computed(() =>
+  selectedOwnedNeighbors.value.filter(
+    (territory) => territory.ownerId !== currentPlayerId.value
+  )
+)
+
+const targetOwner = computed(() =>
+  targetTerritory.value?.ownerId ? playersById.value.get(targetTerritory.value.ownerId) ?? null : null
+)
+
+const activeAttacks = computed<any[]>(() =>
+  Array.isArray(game.value?.activeAttacks) ? game.value.activeAttacks : []
+)
+
+const currentAttack = computed<any | null>(() =>
+  activeAttacks.value.find((attack) => attack.attackerId === currentPlayerId.value) ?? null
+)
+
+const defendingAttack = computed<any | null>(() =>
+  activeAttacks.value.find((attack) => attack.defenderId === currentPlayerId.value) ?? null
+)
+
+const attackSettings = computed(() => game.value?.settings ?? {})
+const attackDurationSeconds = computed(
+  () => Number(attackSettings.value?.attackDuration) || 0
+)
+
+const attackCommandLabel = computed(() => {
+  const name = currentAttack.value?.toTerritoryName ?? targetTerritory.value?.name
+  if (!name || typeof name !== 'string') return ''
+  return `!attaque ${name}`
+})
+
+const defenseCommandLabel = computed(() => {
+  const name = defendingAttack.value?.toTerritoryName ?? targetTerritory.value?.name
+  if (!name || typeof name !== 'string') return ''
+  return `!defend ${name}`
+})
+
+const canLaunchAttack = computed(() => {
+  if (!playerContext.value?.playerId) return false
+  if (currentAttack.value) return false
+  const origin = selectedOwnedTerritory.value
+  const target = targetTerritory.value
+  if (!origin || !target) return false
+  if (target.ownerId === currentPlayerId.value) return false
+  if (target.isUnderAttack) return false
+
+  const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
+  return neighbors.includes(target.id)
+})
+
+const attackCTAEnabled = computed(() => canLaunchAttack.value && !attackLoading.value)
+
+const currentAttackStats = computed(() => {
+  const attack = currentAttack.value
+  if (!attack) return null
+
+  const attackerCount =
+    typeof attack.participantCount?.attackers === 'number'
+      ? attack.participantCount.attackers
+      : Array.isArray(attack.participantAttackers)
+        ? attack.participantAttackers.length
+        : 0
+
+  return {
+    attack,
+    remaining: Number(attack.remainingTime) || 0,
+    messages: Number(attack.attackMessages) || 0,
+    participants: attackerCount,
+    attackPoints: Number(attack.attackPoints) || 0,
+    defensePoints: Number(attack.defensePoints) || 0,
+    baseDefense: Number(attack.baseDefense) || 0
+  }
+})
+
+const currentAttackProgress = computed(() => {
+  const stats = currentAttackStats.value
+  if (!stats) return 0
+  const denominator = Math.max(1, stats.defensePoints || stats.baseDefense || 1)
+  return Math.max(0, Math.min(100, Math.round((stats.attackPoints / denominator) * 100)))
+})
+
+const defendingAttackStats = computed(() => {
+  const attack = defendingAttack.value
+  if (!attack) return null
+
+  const defenderCount =
+    typeof attack.participantCount?.defenders === 'number'
+      ? attack.participantCount.defenders
+      : Array.isArray(attack.participantDefenders)
+        ? attack.participantDefenders.length
+        : 0
+
+  return {
+    attack,
+    remaining: Number(attack.remainingTime) || 0,
+    messages: Number(attack.defenseMessages) || 0,
+    participants: defenderCount,
+    attackPoints: Number(attack.attackPoints) || 0,
+    defensePoints: Number(attack.defensePoints) || 0,
+    baseDefense: Number(attack.baseDefense) || 0
+  }
+})
+
+const defendingAttackProgress = computed(() => {
+  const stats = defendingAttackStats.value
+  if (!stats) return 0
+  const denominator = Math.max(1, stats.defensePoints || stats.baseDefense || 1)
+  return Math.max(0, Math.min(100, Math.round((stats.defensePoints / denominator) * 100)))
+})
+
+const currentAttackEncouragement = computed(() => {
+  if (!currentAttack.value) return ''
+  const territoryName =
+    currentAttack.value.toTerritoryName ?? currentAttack.value.toTerritory ?? 'le territoire'
+  return `Tapez ${attackCommandLabel.value} dans le chat pour booster l'attaque sur ${territoryName} !`
+})
+
+const defendingEncouragement = computed(() => {
+  if (!defendingAttack.value) return ''
+  const territoryName =
+    defendingAttack.value.toTerritoryName ?? defendingAttack.value.toTerritory ?? 'ce territoire'
+  return `Tapez ${defenseCommandLabel.value} dans le chat pour défendre ${territoryName} !`
+})
+
 const clearReconnectTimer = () => {
   if (reconnectTimer !== null) {
     window.clearTimeout(reconnectTimer)
@@ -178,6 +391,55 @@ const ensurePlayerConnections = (players: any[]) => {
   playerConnections.value = next
 }
 
+const applyAttackUpdate = (attackPayload: any, territoryId: string) => {
+  if (!game.value) return
+
+  const current = game.value
+  const incoming = { territoryId, ...attackPayload }
+
+  const activeAttacks = Array.isArray(current.activeAttacks) ? [...current.activeAttacks] : []
+  const index = activeAttacks.findIndex((entry: any) => entry.territoryId === territoryId)
+
+  if (index >= 0) {
+    activeAttacks[index] = { ...activeAttacks[index], ...incoming }
+  } else {
+    activeAttacks.push(incoming)
+  }
+
+  const territories = Array.isArray(current.territories)
+    ? current.territories.map((territory: any) =>
+        territory.id === territoryId ? { ...territory, isUnderAttack: true } : territory
+      )
+    : current.territories
+
+  game.value = {
+    ...current,
+    activeAttacks,
+    territories
+  }
+}
+
+const removeAttackFromState = (territoryId: string) => {
+  if (!game.value) return
+  const current = game.value
+
+  const activeAttacks = Array.isArray(current.activeAttacks)
+    ? current.activeAttacks.filter((entry: any) => entry.territoryId !== territoryId)
+    : current.activeAttacks
+
+  const territories = Array.isArray(current.territories)
+    ? current.territories.map((territory: any) =>
+        territory.id === territoryId ? { ...territory, isUnderAttack: false } : territory
+      )
+    : current.territories
+
+  game.value = {
+    ...current,
+    activeAttacks,
+    territories
+  }
+}
+
 const scheduleReconnect = () => {
   if (manualDisconnect || reconnectTimer !== null) return
 
@@ -204,11 +466,57 @@ const handleSocketMessage = (message: SocketMessage) => {
       }
       sendSocketMessage(socket.value, 'game:update', {gameId})
       break
+    case 'attack:started':
+      if (message.attack && message.territoryId) {
+        applyAttackUpdate(message.attack, message.territoryId)
+        if (message.attack.attackerId === currentPlayerId.value) {
+          selectedOwnedTerritoryId.value = null
+          targetTerritoryId.value = null
+          lastAttackResult.value = null
+        }
+      }
+      if (message.game) {
+        game.value = message.game
+        ensurePlayerConnections(message.game.players ?? [])
+      }
+      break
+    case 'attack:update':
+      if (message.attack && message.territoryId) {
+        applyAttackUpdate(message.attack, message.territoryId)
+      }
+      if (message.game) {
+        game.value = message.game
+        ensurePlayerConnections(message.game.players ?? [])
+      }
+      break
+    case 'attack:finished':
+      if (message.attack && message.territoryId) {
+        removeAttackFromState(message.territoryId)
+      }
+      if (message.game) {
+        game.value = message.game
+        ensurePlayerConnections(message.game.players ?? [])
+      }
+      if (message.attack) {
+        const isAttacker = message.attack.attackerId === currentPlayerId.value
+        const isDefender = message.attack.defenderId === currentPlayerId.value
+
+        if (isAttacker || isDefender) {
+          let outcome: 'win' | 'loss' | 'draw' = 'draw'
+          if (message.attack.winner === currentPlayerId.value) {
+            outcome = 'win'
+          } else if (message.attack.winner && message.attack.winner !== currentPlayerId.value) {
+            outcome = 'loss'
+          }
+          lastAttackResult.value = {
+            attack: message.attack,
+            outcome
+          }
+        }
+      }
+      break
     case 'game:state':
     case 'game:started':
-    case 'attack:started':
-    case 'attack:updated':
-    case 'attack:finished':
     case 'player:left':
     case 'player:ready':
     case 'player:kicked':
@@ -329,6 +637,102 @@ const handleLeaveGame = async () => {
   }
 }
 
+const cancelSelection = () => {
+  selectedOwnedTerritoryId.value = null
+  targetTerritoryId.value = null
+  attackError.value = ''
+}
+
+const handleTerritorySelect = (territoryId: string) => {
+  attackError.value = ''
+
+  const territory = getTerritory(territoryId)
+  if (!territory) return
+
+  if (territory.ownerId === currentPlayerId.value) {
+    selectedOwnedTerritoryId.value = territoryId
+
+    if (
+      targetTerritoryId.value &&
+      (!Array.isArray(territory.neighbors) ||
+        !territory.neighbors.includes(targetTerritoryId.value))
+    ) {
+      targetTerritoryId.value = null
+    }
+    return
+  }
+
+  if (!selectedOwnedTerritoryId.value) {
+    attackError.value = 'Sélectionnez d\'abord un de vos territoires.'
+    return
+  }
+
+  const origin = getTerritory(selectedOwnedTerritoryId.value)
+  if (!origin) {
+    cancelSelection()
+    return
+  }
+
+  if (territory.ownerId === currentPlayerId.value) {
+    attackError.value = 'Ce territoire vous appartient déjà.'
+    return
+  }
+
+  const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
+  if (!neighbors.includes(territoryId)) {
+    attackError.value = 'Vous ne pouvez attaquer que des territoires limitrophes.'
+    return
+  }
+
+  if (territory.isUnderAttack) {
+    attackError.value = 'Ce territoire est déjà sous attaque.'
+    return
+  }
+
+  targetTerritoryId.value = territoryId
+}
+
+const selectTargetFromList = (territoryId: string) => {
+  handleTerritorySelect(territoryId)
+}
+
+const getPlayerUsername = (playerId?: string | null) => {
+  if (!playerId) return null
+  if (typeof playerId === 'string' && playerId.startsWith('bot:')) {
+    return 'Faction IA'
+  }
+  const player = playersById.value.get(playerId)
+  return player?.twitchUsername ?? null
+}
+
+const launchAttack = async () => {
+  if (!canLaunchAttack.value || !playerContext.value?.playerId) {
+    return
+  }
+
+  const originId = selectedOwnedTerritoryId.value
+  const targetId = targetTerritoryId.value
+
+  if (!originId || !targetId) return
+
+  attackError.value = ''
+  attackLoading.value = true
+
+  try {
+    await validateAttack(gameId, playerContext.value.playerId, originId, targetId)
+    sendSocketMessage(socket.value, 'attack:start', {
+      attackerId: playerContext.value.playerId,
+      fromTerritory: originId,
+      toTerritory: targetId
+    })
+  } catch (err) {
+    attackError.value =
+      err instanceof Error ? err.message : 'Impossible de lancer l\'attaque pour le moment.'
+  } finally {
+    attackLoading.value = false
+  }
+}
+
 const handleTabKeyDown = (event: KeyboardEvent) => {
   if (event.key !== 'Tab') return
   event.preventDefault()
@@ -352,6 +756,44 @@ watch(
       }
     }
 )
+
+watch(selectedOwnedTerritory, (territory) => {
+  if (!territory || territory.ownerId !== currentPlayerId.value) {
+    cancelSelection()
+  }
+})
+
+watch(
+  [selectedOwnedTerritory, targetTerritory],
+  ([origin, target]) => {
+    if (!origin) {
+      targetTerritoryId.value = null
+      return
+    }
+
+    if (!target) return
+
+    const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
+    if (!neighbors.includes(target.id)) {
+      targetTerritoryId.value = null
+    }
+  }
+)
+
+watch(currentAttack, (attack) => {
+  if (attack) {
+    cancelSelection()
+  }
+})
+
+const formatDuration = (totalSeconds: number) => {
+  const safe = Math.max(0, Math.floor(Number(totalSeconds) || 0))
+  const minutes = Math.floor(safe / 60)
+  const seconds = safe % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+const attackWindowLabel = computed(() => formatDuration(attackDurationSeconds.value))
 
 onMounted(async () => {
   window.addEventListener('keydown', handleTabKeyDown)
@@ -411,8 +853,42 @@ onBeforeUnmount(() => {
             :territories="game.territories ?? []"
             :players="game.players ?? []"
             :current-player-id="currentPlayerId"
-            :disable-interaction="true"
+            :disable-interaction="false"
+            @select="handleTerritorySelect"
         />
+      </div>
+
+      <div class="pointer-events-none absolute left-4 bottom-4 z-30">
+        <div class="px-4 py-3 text-xs text-card-foreground rounded-xl border bg-card/70 backdrop-blur shadow-xl ring-1 ring-white/10">
+          <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Légende</p>
+          <ul class="space-y-2 text-slate-200">
+            <li class="flex items-center gap-3">
+              <span
+                  class="inline-flex size-3 rounded-full"
+                  :style="{ backgroundColor: currentPlayerColor }"
+              ></span>
+              <span>Vos territoires</span>
+            </li>
+            <li class="flex items-center gap-3">
+              <span
+                  class="inline-flex size-3 rounded-full"
+                  :style="{ backgroundColor: BOT_LEGEND_COLOR }"
+              ></span>
+              <span>Contrôle IA</span>
+            </li>
+            <li
+                v-for="entry in otherPlayerLegendEntries"
+                :key="entry.id"
+                class="flex items-center gap-3"
+            >
+              <span
+                  class="inline-flex size-3 rounded-full"
+                  :style="{ backgroundColor: entry.color }"
+              ></span>
+              <span>{{ entry.label }}</span>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <div
@@ -498,9 +974,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="pointer-events-none absolute inset-0 flex flex-col">
+      <div class="pointer-events-none absolute inset-0 flex flex-col px-4 z-30">
         <Card
-            class="pointer-events-auto mt-6 w-full max-w-5xl bg-card/70 backdrop-blur shadow-xl ring-1 ring-white/10 mx-auto">
+            class="pointer-events-auto mt-4 w-full max-w-5xl bg-card/70 backdrop-blur shadow-xl ring-1 ring-white/10 mx-auto">
           <CardContent>
             <div class="flex items-center justify-between">
               <div class="flex flex-col gap-1">
@@ -544,35 +1020,237 @@ onBeforeUnmount(() => {
         <main class="relative flex flex-1">
           <section class="pointer-events-none flex flex-1 flex-col items-center justify-end">
             <Card
-                class="pointer-events-auto mx-auto mb-8 w-full max-w-4xl bg-card/70 ring-1 ring-white/10 backdrop-blur">
-              <CardHeader class="pb-3">
+                class="pointer-events-auto mx-auto mb-4 w-full max-w-4xl bg-card/70 ring-1 ring-white/10 backdrop-blur">
+              <CardHeader>
                 <div class="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
                   <CardTitle class="flex items-center gap-2 font-semibold uppercase tracking-wide text-slate-200">
                     <Swords class="size-5 text-primary"/>
-                    <span>Commandes de jeu</span>
+                    <span v-if="currentAttackStats">Attaque en cours</span>
+                    <span v-else-if="defendingAttackStats">Défense en direct</span>
+                    <span v-else>Commandes de jeu</span>
                   </CardTitle>
-                  <CardDescription class="text-xs text-slate-400">Gameplay bientôt disponible</CardDescription>
+                  <CardDescription class="text-xs text-slate-400">
+                    <span v-if="currentAttackStats">Fenêtre d'action : {{ attackWindowLabel }}</span>
+                    <span v-else-if="defendingAttackStats">Mobilisez votre communauté pour tenir la ligne.</span>
+                    <span v-else>Sélectionnez un territoire pour lancer l'offensive.</span>
+                  </CardDescription>
                 </div>
               </CardHeader>
               <CardContent class="space-y-4">
-                <div class="flex flex-wrap items-center justify-center gap-4">
-                  <Button variant="secondary" size="lg" disabled class="h-12 px-8 text-base opacity-70">
-                    <Swords class="size-5"/>
-                    Attaquer
-                  </Button>
-                  <Button variant="secondary" size="lg" disabled class="h-12 px-8 text-base opacity-70">
-                    <Shield class="size-5"/>
-                    Défendre
-                  </Button>
-                  <Button variant="secondary" size="lg" disabled class="h-12 px-8 text-base opacity-70">
-                    <PlusCircle class="size-5"/>
-                    Renforcer
-                  </Button>
+                <div v-if="currentAttackStats" class="space-y-4">
+                  <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p class="text-xs uppercase tracking-wide text-slate-500">Cible</p>
+                      <p class="text-lg font-semibold text-slate-100">
+                        {{ currentAttack?.toTerritoryName ?? currentAttack?.toTerritory }}
+                      </p>
+                      <p class="text-xs text-slate-500" v-if="currentAttack?.defenderId">
+                        Défenseur :
+                        <span class="font-medium text-slate-200">
+                          {{ getPlayerUsername(currentAttack?.defenderId) ?? 'Inconnu' }}
+                        </span>
+                      </p>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-xs uppercase tracking-wide text-slate-500">Temps restant</p>
+                      <p class="text-2xl font-semibold text-primary">
+                        {{ formatDuration(currentAttackStats.remaining) }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="space-y-3 rounded-xl border border-white/10 bg-accent/60 p-4">
+                    <p class="text-sm font-medium text-emerald-300">
+                      {{ currentAttackEncouragement }}
+                    </p>
+                    <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+                      <span>Messages
+                        <span class="font-semibold text-slate-100">{{ currentAttackStats.messages }}</span>
+                      </span>
+                      <span>Participants
+                        <span class="font-semibold text-slate-100">{{ currentAttackStats.participants }}</span>
+                      </span>
+                      <span>Puissance
+                        <span class="font-semibold text-slate-100">{{ currentAttackStats.attackPoints }}</span>
+                      </span>
+                      <span>Défense estimée
+                        <span class="font-semibold text-slate-100">{{ currentAttackStats.defensePoints }}</span>
+                      </span>
+                    </div>
+                    <div class="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                      <div
+                          class="h-full bg-primary transition-all duration-500"
+                          :style="{ width: `${currentAttackProgress}%` }"
+                      ></div>
+                    </div>
+                    <p class="text-xs text-slate-500">
+                      Base de défense : {{ currentAttackStats.baseDefense }}
+                    </p>
+                  </div>
                 </div>
-                <p class="text-center text-xs text-slate-300">
-                  Les commandes seront activées prochainement. Préparez votre stratégie pendant la phase de
-                  pré-production.
-                </p>
+
+                <div v-else-if="defendingAttackStats" class="space-y-4">
+                  <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p class="text-xs uppercase tracking-wide text-slate-500">Territoire à défendre</p>
+                      <p class="text-lg font-semibold text-slate-100">
+                        {{ defendingAttack?.toTerritoryName ?? defendingAttack?.toTerritory }}
+                      </p>
+                      <p class="text-xs text-slate-500">
+                        Attaquant :
+                        <span class="font-medium text-slate-200">
+                          {{ getPlayerUsername(defendingAttack?.attackerId) ?? 'Inconnu' }}
+                        </span>
+                      </p>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-xs uppercase tracking-wide text-slate-500">Temps restant</p>
+                      <p class="text-2xl font-semibold text-amber-300">
+                        {{ formatDuration(defendingAttackStats.remaining) }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="space-y-3 rounded-xl border border-white/10 bg-accent/60 p-4">
+                    <p class="text-sm font-medium text-amber-200">
+                      {{ defendingEncouragement }}
+                    </p>
+                    <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+                      <span>Messages
+                        <span class="font-semibold text-slate-100">{{ defendingAttackStats.messages }}</span>
+                      </span>
+                      <span>Défense
+                        <span class="font-semibold text-slate-100">{{ defendingAttackStats.defensePoints }}</span>
+                      </span>
+                      <span>Puissance adverse
+                        <span class="font-semibold text-slate-100">{{ defendingAttackStats.attackPoints }}</span>
+                      </span>
+                    </div>
+                    <div class="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                      <div
+                          class="h-full bg-amber-400 transition-all duration-500"
+                          :style="{ width: `${defendingAttackProgress}%` }"
+                      ></div>
+                    </div>
+                    <p class="text-xs text-slate-500">
+                      Base de défense : {{ defendingAttackStats.baseDefense }}
+                    </p>
+                  </div>
+                </div>
+
+                <div v-else class="space-y-4">
+                  <div v-if="lastAttackResult" class="rounded-lg border border-white/10 bg-slate-900/50 p-4">
+                    <p
+                        class="text-sm font-semibold"
+                        :class="{
+                          'text-emerald-300': lastAttackResult.outcome === 'win',
+                          'text-red-300': lastAttackResult.outcome === 'loss',
+                          'text-slate-300': lastAttackResult.outcome === 'draw'
+                        }"
+                    >
+                      <template v-if="lastAttackResult.outcome === 'win'">Victoire !</template>
+                      <template v-else-if="lastAttackResult.outcome === 'loss'">Défaite…</template>
+                      <template v-else>Égalité</template>
+                      <span class="ml-2 text-xs text-slate-400">
+                        {{ lastAttackResult.attack.attackPoints }} vs {{ lastAttackResult.attack.defensePoints }}
+                      </span>
+                    </p>
+                  </div>
+
+                  <div class="space-y-3 rounded-xl border border-white/10 bg-accent/60 p-4">
+                    <div class="flex flex-wrap items-center justify-between gap-4 text-sm text-slate-300">
+                      <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Territoire source</p>
+                        <p class="text-sm font-semibold text-slate-100">
+                          {{ selectedOwnedTerritory?.name ?? 'Non sélectionné' }}
+                        </p>
+                      </div>
+                      <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Cible</p>
+                        <p class="text-sm font-semibold text-slate-100">
+                          {{ targetTerritory?.name ?? 'Non sélectionnée' }}
+                        </p>
+                      </div>
+                      <div class="text-right">
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Fenêtre d'action</p>
+                        <p class="text-sm font-semibold text-slate-100">{{ attackWindowLabel }}</p>
+                      </div>
+                    </div>
+
+                    <p v-if="attackError" class="text-xs font-medium text-red-300">{{ attackError }}</p>
+
+                    <div v-if="selectedOwnedTerritory && !targetTerritory" class="space-y-2">
+                      <p class="text-xs text-slate-400">
+                        Choisissez une cible limitrophe à partir de {{ selectedOwnedTerritory.name }} :
+                      </p>
+                      <div class="flex flex-wrap gap-2">
+                        <Button
+                            v-for="territory in potentialTargets"
+                            :key="territory.id"
+                            size="sm"
+                            variant="secondary"
+                            class="pointer-events-auto"
+                            @click="selectTargetFromList(territory.id)"
+                        >
+                          {{ territory.name }}
+                          <span class="ml-2 text-xs text-slate-400" v-if="territory.defensePower">
+                            🛡 {{ territory.defensePower }}
+                          </span>
+                        </Button>
+                      </div>
+                      <p v-if="potentialTargets.length === 0" class="text-xs text-slate-500">
+                        Aucun territoire adverse adjacent.
+                      </p>
+                    </div>
+
+                    <div v-if="selectedOwnedTerritory && targetTerritory" class="space-y-2 text-xs text-slate-300">
+                      <p>
+                        Objectif :
+                        <span class="font-semibold text-slate-100">{{ targetTerritory.name }}</span>
+                        <span class="text-slate-400">
+                          (défense {{ targetTerritory.defensePower ?? 0 }})
+                        </span>
+                      </p>
+                      <p>
+                        Commande Twitch :
+                        <span class="font-mono text-primary">
+                          {{ attackCommandLabel || '!attaque <pays>' }}
+                        </span>
+                      </p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+                      <Button
+                          variant="outline"
+                          size="sm"
+                          class="pointer-events-auto"
+                          @click="cancelSelection"
+                          :disabled="!selectedOwnedTerritory && !targetTerritory"
+                      >
+                        <OctagonMinus class="size-4"/>
+                        Réinitialiser
+                      </Button>
+                      <Button
+                          variant="default"
+                          size="lg"
+                          class="pointer-events-auto"
+                          :disabled="!attackCTAEnabled"
+                          @click="launchAttack"
+                      >
+                        <Swords class="size-5"/>
+                        <span v-if="attackLoading">Préparation...</span>
+                        <span v-else>Lancer l'attaque</span>
+                      </Button>
+                    </div>
+
+                    <p class="text-xs text-slate-500">
+                      Sélectionnez un territoire que vous contrôlez puis une cible limitrophe à attaquer.
+                      Pendant {{ attackWindowLabel }}, vos viewers doivent spammer
+                      <span class="font-mono">{{ attackCommandLabel || '!attaque &lt;pays&gt;' }}</span>
+                      sur Twitch pour augmenter la puissance d'attaque.
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </section>

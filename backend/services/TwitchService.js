@@ -8,6 +8,31 @@ class TwitchService {
         this.commandHandlers = new Map();
     }
 
+    normalizeTarget(value) {
+        if (typeof value !== 'string') {
+            return '';
+        }
+        return value.trim().toLowerCase();
+    }
+
+    doesTargetMatch(attack, territoryId, incomingTarget) {
+        const normalizedTarget = this.normalizeTarget(incomingTarget);
+        if (!normalizedTarget) {
+            return false;
+        }
+
+        const candidates = [
+            attack.toTerritoryName,
+            attack.toTerritory,
+            territoryId
+        ].map((candidate) => this.normalizeTarget(candidate));
+
+        return candidates.some((candidate) => {
+            if (!candidate) return false;
+            return candidate.includes(normalizedTarget) || normalizedTarget.includes(candidate);
+        });
+    }
+
     // Connecter un streamer à son chat Twitch
     async connectToChannel(playerId, channelName, oauthToken) {
         // Si déjà connecté, déconnecter d'abord
@@ -62,8 +87,7 @@ class TwitchService {
             // Trouver l'attaque où ce joueur est l'attaquant
             for (let [territoryId, attack] of game.activeAttacks) {
                 if (attack.attackerId === playerId && attack.status === 'ongoing') {
-                    const targetMatch = attack.toTerritory.toLowerCase().includes(target) ||
-                        target.includes(attack.toTerritory.toLowerCase());
+                    const targetMatch = this.doesTargetMatch(attack, territoryId, target);
 
                     if (targetMatch) {
                         AttackManager.addAttackCommand(game.id, territoryId, username, false);
@@ -80,8 +104,7 @@ class TwitchService {
             // Trouver l'attaque où ce joueur est le défenseur
             for (let [territoryId, attack] of game.activeAttacks) {
                 if (attack.defenderId === playerId && attack.status === 'ongoing') {
-                    const targetMatch = attack.toTerritory.toLowerCase().includes(target) ||
-                        target.includes(attack.toTerritory.toLowerCase());
+                    const targetMatch = this.doesTargetMatch(attack, territoryId, target);
 
                     if (targetMatch) {
                         AttackManager.addAttackCommand(game.id, territoryId, username, true);
@@ -126,14 +149,14 @@ class TwitchService {
         if (attacker) {
             await this.sendMessage(
                 attack.attackerId,
-                `⚔️ Attaque lancée contre ${attack.toTerritory} ! Tapez !attaque ${attack.toTerritory} pour soutenir l'attaque !`
+                `⚔️ Attaque lancée contre ${attack.toTerritoryName || attack.toTerritory} ! Tapez !attaque ${attack.toTerritoryName || attack.toTerritory} pour soutenir l'attaque !`
             );
         }
 
         if (defender) {
             await this.sendMessage(
                 attack.defenderId,
-                `🛡️ Votre territoire ${attack.toTerritory} est attaqué ! Tapez !defend ${attack.toTerritory} pour le défendre !`
+                `🛡️ Votre territoire ${attack.toTerritoryName || attack.toTerritory} est attaqué ! Tapez !defend ${attack.toTerritoryName || attack.toTerritory} pour le défendre !`
             );
         }
     }
@@ -146,11 +169,11 @@ class TwitchService {
 
         let resultMessage = '';
         if (winner === attack.attackerId) {
-            resultMessage = `🎉 ${attacker?.twitchUsername} a conquis ${attack.toTerritory} ! (${attack.attackPoints} vs ${attack.defensePoints})`;
+            resultMessage = `🎉 ${attacker?.twitchUsername} a conquis ${attack.toTerritoryName || attack.toTerritory} ! (${attack.attackPoints} vs ${attack.defensePoints})`;
         } else if (winner === attack.defenderId) {
-            resultMessage = `🛡️ ${defender?.twitchUsername} a défendu ${attack.toTerritory} avec succès ! (${attack.defensePoints} vs ${attack.attackPoints})`;
+            resultMessage = `🛡️ ${defender?.twitchUsername} a défendu ${attack.toTerritoryName || attack.toTerritory} avec succès ! (${attack.defensePoints} vs ${attack.attackPoints})`;
         } else {
-            resultMessage = `⚖️ Égalité ! Le territoire ${attack.toTerritory} reste à ${defender?.twitchUsername}. (${attack.attackPoints} vs ${attack.defensePoints})`;
+            resultMessage = `⚖️ Égalité ! Le territoire ${attack.toTerritoryName || attack.toTerritory} reste à ${defender?.twitchUsername}. (${attack.attackPoints} vs ${attack.defensePoints})`;
         }
 
         // Envoyer aux deux streamers

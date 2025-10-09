@@ -327,7 +327,13 @@ const createDefenseLayer = () =>
     sizeMaxPixels: Math.min(36, defenseLabelSize.value + 10),
     getTextAnchor: () => 'middle',
     getAlignmentBaseline: () => 'center',
-    characterSet: 'auto'
+    characterSet: 'auto',
+    updateTriggers: {
+      getSize: defenseLabelSize.value,
+      getColor: defenseLabelSize.value,
+      sizeMinPixels: defenseLabelSize.value,
+      sizeMaxPixels: defenseLabelSize.value
+    }
   })
 
 const layers = computed((): any[] => {
@@ -353,6 +359,11 @@ onMounted(() => {
     onViewStateChange: ({ viewState }) => {
       if (Number.isFinite(viewState.zoom)) {
         viewZoom.value = viewState.zoom as number
+        if (deckInstance) {
+          deckInstance.setProps({
+            layers: layers.value
+          })
+        }
       }
     }
   })
@@ -370,6 +381,13 @@ watch(
 )
 
 watch([layers, territoryState, defenseLabels, showDefenseOverlay, defenseLabelSize], () => {
+  if (!deckInstance) return
+  deckInstance.setProps({
+    layers: layers.value
+  })
+})
+
+watch(viewZoom, () => {
   if (!deckInstance) return
   deckInstance.setProps({
     layers: layers.value

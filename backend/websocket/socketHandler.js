@@ -123,9 +123,8 @@ export function setupWebSocket(connection, req) {
                         });
 
                         // Annoncer les résultats dans les chats Twitch
-                        const finishedAttack = attackGame.activeAttacks.get(toTerritory);
-                        if (finishedAttack) {
-                            TwitchService.announceResults(attackGame, finishedAttack);
+                        if (attackData) {
+                            TwitchService.announceResults(attackGame, attackData);
                         }
                     }
                 );

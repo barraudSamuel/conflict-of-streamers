@@ -247,11 +247,19 @@ export class Game {
 
     // Ajouter une attaque
     addAttack(territoryId, attack) {
+        const territory = this.territories.get(territoryId);
+        if (territory) {
+            territory.isUnderAttack = true;
+        }
         this.activeAttacks.set(territoryId, attack);
     }
 
     // Retirer une attaque
     removeAttack(territoryId) {
+        const territory = this.territories.get(territoryId);
+        if (territory) {
+            territory.isUnderAttack = false;
+        }
         this.activeAttacks.delete(territoryId);
     }
 
@@ -321,7 +329,7 @@ export class Game {
             })),
             activeAttacks: Array.from(this.activeAttacks.entries()).map(([territoryId, attack]) => ({
                 territoryId,
-                ...attack
+                ...attack.toJSON()
             })),
             createdAt: this.createdAt,
             startedAt: this.startedAt,

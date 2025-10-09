@@ -7,6 +7,10 @@ class AttackManager {
     }
 
     canAttack(game, attackerId, fromTerritory, toTerritory) {
+        if (!game) {
+            return { valid: false, error: 'Game not in playing state' };
+        }
+
         // Vérifier que le jeu est en cours
         if (game.status !== 'playing') {
             return { valid: false, error: 'Game not in playing state' };
@@ -41,9 +45,9 @@ class AttackManager {
         }
 
         // TODO: Vérifier que les territoires sont adjacents
-        // if (!this.areAdjacent(fromTerritory, toTerritory)) {
-        //   return { valid: false, error: 'Territories are not adjacent' };
-        // }
+        if (!game.areTerritoriesAdjacent(fromTerritory, toTerritory)) {
+            return { valid: false, error: 'Territories are not adjacent. You can only attack neighboring territories.' };
+        }
 
         return { valid: true };
     }
@@ -61,13 +65,40 @@ class AttackManager {
 
         const toTerr = game.territories.get(toTerritory);
         const defenderId = toTerr.ownerId;
+        const fromTerr = game.territories.get(fromTerritory);
+
+        if (!fromTerr) {
+            throw new Error('Source territory not found');
+        }
+
+        const neighbors = Array.isArray(toTerr.neighbors) ? toTerr.neighbors : [];
+        const attackFrontiers = neighbors.filter((neighborId) => {
+            const neighbor = game.territories.get(neighborId);
+            return neighbor?.ownerId === attackerId;
+        }).length;
+
+        const defenseFrontiers = neighbors.filter((neighborId) => {
+            const neighbor = game.territories.get(neighborId);
+            return neighbor?.ownerId === defenderId;
+        }).length;
+
+        const attackOptions = {
+            baseDefense: toTerr.defensePower ?? 0,
+            attackAmplifier: game.settings?.messageAttackBonus ?? 1,
+            defenseAmplifier: game.settings?.messageDefenseBonus ?? 1,
+            attackFrontiers,
+            defenseFrontiers,
+            attackFrontierFactor: game.settings?.frontierAttackBonus ?? 1,
+            defenseFrontierFactor: game.settings?.frontierDefenseBonus ?? 1
+        };
 
         const attack = new Attack(
             attackerId,
             defenderId,
-            fromTerritory,
-            toTerritory,
-            game.settings.attackDuration
+            { id: fromTerritory, name: fromTerr.name ?? fromTerritory },
+            { id: toTerritory, name: toTerr.name ?? toTerritory },
+            game.settings.attackDuration,
+            attackOptions
         );
 
         // Ajouter l'attaque au jeu
@@ -124,9 +155,10 @@ class AttackManager {
         // Déterminer le gagnant
         const winner = attack.finish();
 
+        const territory = game.territories.get(attack.toTerritory);
+
         // Transférer le territoire si l'attaquant gagne
         if (winner === attack.attackerId) {
-            const territory = game.territories.get(attack.toTerritory);
             if (territory) {
                 territory.ownerId = attack.attackerId;
 
@@ -144,6 +176,10 @@ class AttackManager {
             }
         }
 
+        if (territory) {
+            territory.isUnderAttack = false;
+        }
+
         // Vérifier si le jeu est terminé (un joueur possède tout)
         const owners = new Set();
         for (let territory of game.territories.values()) {
@@ -156,10 +192,11 @@ class AttackManager {
             game.endGame();
         }
 
+        const attackData = attack.toJSON();
         game.removeAttack(territoryId);
 
         if (callback) {
-            callback(attack.toJSON(), game.toJSON());
+            callback(attackData, game.toJSON());
         }
 
         return attack;
