@@ -17,6 +17,7 @@ import {getGame, leaveGame as leaveGameRequest, validateAttack} from '@/services
 import {clearPlayerContext, loadPlayerContext, type PlayerContext} from '@/lib/playerStorage'
 import {
   LogOut,
+  ScrollText,
   SignalHigh,
   SignalLow,
   Swords,
@@ -44,9 +45,42 @@ const targetTerritoryId = ref<string | null>(null)
 const attackError = ref('')
 const attackLoading = ref(false)
 const lastAttackResult = ref<{ attack: any; outcome: 'win' | 'loss' | 'draw' } | null>(null)
+interface ActionLogFragment {
+  text: string
+  color?: string | null
+}
+
+interface ActionLogEntry {
+  id: string
+  timestamp: number
+  variant: 'info' | 'success' | 'error'
+  parts: ActionLogFragment[]
+}
+
+const MAX_ACTION_HISTORY = 15
+const actionHistory = ref<ActionLogEntry[]>([])
+const ACTION_HISTORY_VISIBILITY_MS = 10_000
+const historyClock = ref(Date.now())
+
+const addActionHistoryEntry = (
+  partsOrMessage: string | ActionLogFragment[],
+  variant: ActionLogEntry['variant'] = 'info'
+) => {
+  const parts: ActionLogFragment[] =
+    typeof partsOrMessage === 'string' ? [{ text: partsOrMessage }] : partsOrMessage
+  const entry: ActionLogEntry = {
+    id: `log-${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`,
+    timestamp: Date.now(),
+    variant,
+    parts
+  }
+  historyClock.value = Date.now()
+  actionHistory.value = [entry, ...actionHistory.value].slice(0, MAX_ACTION_HISTORY)
+}
 
 let reconnectTimer: number | null = null
 let manualDisconnect = false
+let historyInterval: number | null = null
 
 const currentPlayerId = computed(() => playerContext.value?.playerId ?? '')
 
@@ -221,17 +255,13 @@ const selectedOwnedNeighbors = computed<any[]>(() => {
   if (!selected || !Array.isArray(selected.neighbors)) return []
   return selected.neighbors
     .map((id: string) => getTerritory(id))
-    .filter((item): item is any => item !== null)
+    .filter((item: any): item is any => item !== null)
 })
 
 const potentialTargets = computed(() =>
   selectedOwnedNeighbors.value.filter(
     (territory) => territory.ownerId !== currentPlayerId.value
   )
-)
-
-const targetOwner = computed(() =>
-  targetTerritory.value?.ownerId ? playersById.value.get(targetTerritory.value.ownerId) ?? null : null
 )
 
 const activeAttacks = computed<any[]>(() =>
@@ -472,6 +502,24 @@ const handleSocketMessage = (message: SocketMessage) => {
           targetTerritoryId.value = null
           lastAttackResult.value = null
         }
+        const attackerInfo = formatPlayerLabel(message.attack.attackerId)
+        const territoryLabel =
+          message.attack.toTerritoryName ?? message.attack.toTerritory ?? 'un territoire'
+        const defenderInfo = message.attack.defenderId
+          ? formatPlayerLabel(message.attack.defenderId)
+          : null
+        const fragments: ActionLogFragment[] = defenderInfo
+          ? [
+              { text: attackerInfo.label, color: attackerInfo.color },
+              { text: ' attaque ' },
+              { text: defenderInfo.label, color: defenderInfo.color },
+              { text: ` sur ${territoryLabel}!` }
+            ]
+          : [
+              { text: attackerInfo.label, color: attackerInfo.color },
+              { text: ` attaque ${territoryLabel}!` }
+            ]
+        addActionHistoryEntry(fragments, 'info')
       }
       if (message.game) {
         game.value = message.game
@@ -496,6 +544,36 @@ const handleSocketMessage = (message: SocketMessage) => {
         ensurePlayerConnections(message.game.players ?? [])
       }
       if (message.attack) {
+        const attackerInfo = formatPlayerLabel(message.attack.attackerId)
+        const territoryLabel =
+          message.attack.toTerritoryName ?? message.attack.toTerritory ?? 'le territoire'
+        let fragments: ActionLogFragment[] = []
+        let logVariant: ActionLogEntry['variant'] = 'info'
+
+        if (message.attack.winner === message.attack.attackerId) {
+          fragments = [
+            { text: attackerInfo.label, color: attackerInfo.color },
+            { text: ` a conquis ${territoryLabel}!` }
+          ]
+          logVariant = 'success'
+        } else if (message.attack.winner === message.attack.defenderId) {
+          const defenderInfo = message.attack.defenderId
+            ? formatPlayerLabel(message.attack.defenderId)
+            : { label: 'sa cible', color: DEFAULT_PLAYER_LOG_COLOR }
+          fragments = [
+            { text: "L'attaque de " },
+            { text: attackerInfo.label, color: attackerInfo.color },
+            { text: ' a échoué face à ' },
+            { text: defenderInfo.label, color: defenderInfo.color },
+            { text: ` sur ${territoryLabel}.` }
+          ]
+          logVariant = 'error'
+        } else {
+          fragments = [{ text: `Combat indécis sur ${territoryLabel}.` }]
+        }
+
+        addActionHistoryEntry(fragments, logVariant)
+
         const isAttacker = message.attack.attackerId === currentPlayerId.value
         const isDefender = message.attack.defenderId === currentPlayerId.value
 
@@ -703,6 +781,41 @@ const getPlayerUsername = (playerId?: string | null) => {
   return player?.twitchUsername ?? null
 }
 
+const DEFAULT_PLAYER_LOG_COLOR = '#cbd5f5'
+
+const getPlayerColor = (playerId?: string | null) => {
+  if (!playerId) return DEFAULT_PLAYER_LOG_COLOR
+  if (typeof playerId === 'string' && playerId.startsWith('bot:')) {
+    return BOT_LEGEND_COLOR
+  }
+  if (playerId === currentPlayerId.value) {
+    return currentPlayerColor.value
+  }
+  const player = playersById.value.get(playerId)
+  const color =
+    typeof player?.color === 'string' && player.color.trim() !== '' ? player.color : DEFAULT_PLAYER_LOG_COLOR
+  return color
+}
+
+const formatPlayerLabel = (playerId?: string | null) => {
+  const label = getPlayerUsername(playerId) ?? 'Inconnu'
+  const color = getPlayerColor(playerId)
+  return { label, color }
+}
+
+const formatLogTimestamp = (timestamp: number) =>
+  new Date(timestamp).toLocaleTimeString('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+
+const visibleActionHistory = computed(() =>
+  actionHistory.value.filter(
+    (entry) => historyClock.value - entry.timestamp <= ACTION_HISTORY_VISIBILITY_MS
+  )
+)
+
 const launchAttack = async () => {
   if (!canLaunchAttack.value || !playerContext.value?.playerId) {
     return
@@ -796,6 +909,13 @@ const attackWindowLabel = computed(() => formatDuration(attackDurationSeconds.va
 onMounted(async () => {
   window.addEventListener('keydown', handleTabKeyDown)
   window.addEventListener('keyup', handleTabKeyUp)
+  historyClock.value = Date.now()
+  if (historyInterval !== null) {
+    window.clearInterval(historyInterval)
+  }
+  historyInterval = window.setInterval(() => {
+    historyClock.value = Date.now()
+  }, 1000)
 
   const storedContext = loadPlayerContext()
 
@@ -821,6 +941,10 @@ onBeforeUnmount(() => {
   scoreboardVisible.value = false
   window.removeEventListener('keydown', handleTabKeyDown)
   window.removeEventListener('keyup', handleTabKeyUp)
+  if (historyInterval !== null) {
+    window.clearInterval(historyInterval)
+    historyInterval = null
+  }
 
   manualDisconnect = true
   clearReconnectTimer()
@@ -887,55 +1011,106 @@ onBeforeUnmount(() => {
             </CardContent>
           </Card>
 
-          <Card class="backdrop-blur">
-            <CardHeader class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle class="flex items-center gap-2">
-                <Users class="size-4 text-emerald-300"/>
-                <span>Joueurs</span>
-              </CardTitle>
-              <CardDescription class="text-xs">
-                {{ connectedPlayerCount }}/{{ playersSummary.length }} connectés
-              </CardDescription>
-            </CardHeader>
-            <CardContent class="pt-0">
-              <ScrollArea class="max-h-[360px] pr-4">
-                <ul class="space-y-3 p-1">
-                  <li
-                      v-for="player in playersSummary"
-                      :key="player.id"
-                      class="flex items-center justify-between rounded-xl border bg-accent px-4 py-4"
-                      :class="player.isCurrent ? 'ring-2 ring-primary/80' : ''"
-                  >
-                    <div class="flex items-center gap-3">
+          <div class="flex justify-between items-start gap-4">
+            <Card class="backdrop-blur w-full">
+              <CardHeader class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle class="flex items-center gap-2">
+                  <Users class="size-4 text-emerald-300"/>
+                  <span>Joueurs</span>
+                </CardTitle>
+                <CardDescription class="text-xs">
+                  {{ connectedPlayerCount }}/{{ playersSummary.length }} connectés
+                </CardDescription>
+              </CardHeader>
+              <CardContent class="pt-0">
+                <ScrollArea class="max-h-[360px] pr-4">
+                  <ul class="space-y-3 p-1">
+                    <li
+                        v-for="player in playersSummary"
+                        :key="player.id"
+                        class="flex items-center justify-between rounded-xl border bg-accent px-4 py-4"
+                        :class="player.isCurrent ? 'ring-2 ring-primary/80' : ''"
+                    >
+                      <div class="flex items-center gap-3">
                       <span
                           class="size-3 rounded-full ring-2 ring-white/30"
                           :style="{ backgroundColor: player.color || '#94a3b8' }"
                       ></span>
-                      <div class="flex flex-col">
+                        <div class="flex flex-col">
                         <span class="text-sm font-semibold text-slate-100">
                           {{ player.twitchUsername }}
                           <span v-if="player.isAdmin" class="ml-1 text-xs uppercase text-yellow-400">Host</span>
                           <span v-else-if="player.isCurrent" class="ml-1 text-xs uppercase text-primary">Vous</span>
                         </span>
-                        <span class="text-xs text-slate-400">
+                          <span class="text-xs text-slate-400">
                           Territoires: {{ player.territories }} • Score: {{ player.score }}
                         </span>
+                        </div>
                       </div>
-                    </div>
-                    <div class="flex items-center gap-2 text-xs">
+                      <div class="flex items-center gap-2 text-xs">
                       <span :class="player.connected ? 'text-emerald-300' : 'text-slate-500'">
                         {{ player.connected ? 'Connecté' : 'Déconnecté' }}
                       </span>
+                        <span
+                            class="size-2 rounded-full"
+                            :class="player.connected ? 'bg-emerald-400' : 'bg-slate-500'"
+                        ></span>
+                      </div>
+                    </li>
+                  </ul>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            <Card class="backdrop-blur w-full">
+              <CardHeader class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle class="flex items-center gap-2">
+                  <ScrollText class="size-4 text-emerald-300"/>
+                  <span>Historique des actions</span>
+                </CardTitle>
+                <CardDescription class="text-xs">
+                  Journal complet des actions récentes.
+                </CardDescription>
+              </CardHeader>
+              <CardContent class="pt-0">
+                <ScrollArea class="max-h-[260px] pr-4">
+                  <div
+                      v-if="!actionHistory.length"
+                      class="rounded-lg border border-white/10 bg-accent p-4 text-xs"
+                  >
+                    Aucun événement pour le moment.
+                  </div>
+                  <ul v-else class="space-y-3 p-1">
+                    <li
+                        v-for="entry in actionHistory"
+                        :key="`modal-${entry.id}`"
+                        class="rounded-lg border border-white/10 bg-accent p-3"
+                    >
+                      <p
+                          class="text-sm font-semibold"
+                          :class="{
+                          'text-emerald-300': entry.variant === 'success',
+                          'text-red-300': entry.variant === 'error',
+                          'text-slate-200': entry.variant === 'info'
+                        }"
+                      >
                       <span
-                          class="size-2 rounded-full"
-                          :class="player.connected ? 'bg-emerald-400' : 'bg-slate-500'"
-                      ></span>
-                    </div>
-                  </li>
-                </ul>
-              </ScrollArea>
-            </CardContent>
-          </Card>
+                          v-for="part in entry.parts"
+                          :key="`${entry.id}-${part.text}-${part.color ?? 'none'}-modal`"
+                          :style="part.color ? { color: part.color } : undefined"
+                      >
+                        {{ part.text }}
+                      </span>
+                      </p>
+                      <p class="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                        {{ formatLogTimestamp(entry.timestamp) }}
+                      </p>
+                    </li>
+                  </ul>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
 
@@ -969,6 +1144,35 @@ onBeforeUnmount(() => {
               <span v-if="!leavingGame">Quitter</span>
               <span v-else>Déconnexion...</span>
             </Button>
+          </div>
+        </div>
+
+        <div
+            v-if="visibleActionHistory.length"
+            class="pointer-events-none absolute right-4 top-24 z-40 flex w-full max-w-xs flex-col gap-3">
+          <div
+              v-for="entry in visibleActionHistory"
+              :key="entry.id"
+              class="pointer-events-auto overflow-hidden rounded-xl border border-white/10 bg-card/70 px-4 py-3 shadow-lg backdrop-blur">
+            <p
+                class="text-xs font-semibold"
+                :class="{
+                  'text-emerald-300': entry.variant === 'success',
+                  'text-red-300': entry.variant === 'error',
+                  'text-slate-200': entry.variant === 'info'
+                }"
+            >
+              <span
+                  v-for="part in entry.parts"
+                  :key="`${entry.id}-${part.text}-${part.color ?? 'none'}`"
+                  :style="part.color ? { color: part.color } : undefined"
+              >
+                {{ part.text }}
+              </span>
+            </p>
+            <p class="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+              {{ formatLogTimestamp(entry.timestamp) }}
+            </p>
           </div>
         </div>
 
