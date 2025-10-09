@@ -1023,7 +1023,7 @@ onBeforeUnmount(() => {
                 </CardDescription>
               </CardHeader>
               <CardContent class="pt-0">
-                <ScrollArea class="max-h-[360px] pr-4">
+                <ScrollArea class="h-[360px] pr-4">
                   <ul class="space-y-3 p-1">
                     <li
                         v-for="player in playersSummary"
@@ -1073,7 +1073,7 @@ onBeforeUnmount(() => {
                 </CardDescription>
               </CardHeader>
               <CardContent class="pt-0">
-                <ScrollArea class="max-h-[260px] pr-4">
+                <ScrollArea class="h-[360px] pr-4">
                   <div
                       v-if="!actionHistory.length"
                       class="rounded-lg border border-white/10 bg-accent p-4 text-xs"
