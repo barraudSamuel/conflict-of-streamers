@@ -2,10 +2,21 @@ import tmi from 'tmi.js';
 import GameManager from '../managers/GameManager.js';
 import AttackManager from '../managers/AttackManager.js';
 
+const READY_STATE_OPEN = 'OPEN';
+
 class TwitchService {
     constructor() {
-        this.clients = new Map(); // playerId -> tmi.Client
+        this.gameClients = new Map(); // gameId -> Map<playerId, { client, channel }>
+        this.playerToGame = new Map(); // playerId -> gameId
+        this.playerChannels = new Map(); // playerId -> channel
         this.commandHandlers = new Map();
+    }
+
+    normalizeChannel(channel) {
+        if (typeof channel !== 'string') {
+            return '';
+        }
+        return channel.trim().replace(/^#/, '').toLowerCase();
     }
 
     normalizeTarget(value) {
@@ -33,92 +44,202 @@ class TwitchService {
         });
     }
 
-    // Connecter un streamer à son chat Twitch
-    async connectToChannel(playerId, channelName, oauthToken) {
-        // Si déjà connecté, déconnecter d'abord
-        if (this.clients.has(playerId)) {
-            await this.disconnectFromChannel(playerId);
+    registerClient(gameId, playerId, channel, client) {
+        if (!this.gameClients.has(gameId)) {
+            this.gameClients.set(gameId, new Map());
         }
+        const gameMap = this.gameClients.get(gameId);
+        gameMap.set(playerId, { client, channel });
+        this.playerToGame.set(playerId, gameId);
+        this.playerChannels.set(playerId, channel);
+    }
+
+    getClientEntry(playerId) {
+        const gameId = this.playerToGame.get(playerId);
+        if (!gameId) return null;
+        const gameMap = this.gameClients.get(gameId);
+        if (!gameMap) return null;
+        return gameMap.get(playerId) ?? null;
+    }
+
+    async connectToChannel(gameId, playerId, channelName) {
+        const normalizedChannel = this.normalizeChannel(channelName);
+        if (!gameId || !playerId || !normalizedChannel) {
+            return null;
+        }
+
+        const currentEntry = this.getClientEntry(playerId);
+        if (currentEntry && currentEntry.channel === normalizedChannel) {
+            return currentEntry.client;
+        }
+
+        await this.disconnectFromChannel(playerId);
 
         const client = new tmi.Client({
             options: { debug: false },
-            channels: [channelName]
+            connection: { secure: true, reconnect: true },
+            channels: [normalizedChannel]
         });
 
-        // Gérer les messages du chat
         client.on('message', (channel, tags, message, self) => {
             if (self) return;
-
-            this.handleChatCommand(playerId, tags.username, message);
+            this.handleChatCommand(gameId, playerId, tags?.username ?? '', message);
         });
 
         client.on('connected', () => {
-            console.log(`✅ Connected to Twitch channel: ${channelName}`);
+            console.log(`✅ Connected to Twitch channel: ${normalizedChannel}`);
         });
 
         client.on('disconnected', (reason) => {
-            console.log(`❌ Disconnected from ${channelName}: ${reason}`);
+            console.log(`❌ Disconnected from ${normalizedChannel}: ${reason}`);
         });
 
         await client.connect();
-        this.clients.set(playerId, client);
+        this.registerClient(gameId, playerId, normalizedChannel, client);
 
         return client;
     }
 
     async disconnectFromChannel(playerId) {
-        const client = this.clients.get(playerId);
-        if (client) {
+        const entry = this.getClientEntry(playerId);
+        if (!entry) {
+            this.playerToGame.delete(playerId);
+            this.playerChannels.delete(playerId);
+            return;
+        }
+
+        const { client } = entry;
+        const gameId = this.playerToGame.get(playerId);
+
+        try {
             await client.disconnect();
-            this.clients.delete(playerId);
+        } catch (error) {
+            console.warn(`Failed to disconnect Twitch client for player ${playerId}: ${error.message}`);
+        }
+
+        if (gameId && this.gameClients.has(gameId)) {
+            const gameMap = this.gameClients.get(gameId);
+            gameMap.delete(playerId);
+            if (gameMap.size === 0) {
+                this.gameClients.delete(gameId);
+            }
+        }
+
+        this.playerToGame.delete(playerId);
+        this.playerChannels.delete(playerId);
+    }
+
+    async disconnectGame(gameId) {
+        const gameMap = this.gameClients.get(gameId);
+        if (!gameMap) return;
+
+        for (let playerId of gameMap.keys()) {
+            await this.disconnectFromChannel(playerId);
+        }
+        this.gameClients.delete(gameId);
+    }
+
+    async disconnectAll() {
+        for (let gameId of this.gameClients.keys()) {
+            await this.disconnectGame(gameId);
+        }
+        this.commandHandlers.clear();
+    }
+
+    async syncGameChannels(game) {
+        if (!game || !game.id) {
+            return;
+        }
+
+        const desiredPlayers = new Map();
+        const players = Array.isArray(game.players) ? game.players : [];
+
+        for (let player of players) {
+            const normalized = this.normalizeChannel(player?.twitchUsername);
+            if (!player?.id || !normalized) continue;
+            desiredPlayers.set(player.id, { normalized, raw: player.twitchUsername });
+        }
+
+        const existingEntries = this.gameClients.get(game.id);
+        if (existingEntries) {
+            for (let [playerId, entry] of existingEntries) {
+                const desired = desiredPlayers.get(playerId);
+                if (!desired || desired.normalized !== entry.channel) {
+                    await this.disconnectFromChannel(playerId);
+                }
+            }
+        }
+
+        for (let [playerId, { raw, normalized }] of desiredPlayers) {
+            const entry = this.getClientEntry(playerId);
+            if (!entry || entry.channel !== normalized) {
+                try {
+                    await this.connectToChannel(game.id, playerId, raw);
+                } catch (error) {
+                    console.error(`Failed to connect to Twitch channel ${raw}: ${error.message}`);
+                }
+            }
+        }
+
+        if (desiredPlayers.size === 0) {
+            await this.disconnectGame(game.id);
         }
     }
 
-    handleChatCommand(playerId, username, message) {
-        const game = GameManager.getGameByPlayerId(playerId);
+    handleChatCommand(gameId, playerId, username, message) {
+        const game = GameManager.getGame(gameId);
         if (!game || game.status !== 'playing') return;
 
-        const msg = message.trim().toLowerCase();
+        const msg = typeof message === 'string' ? message.trim().toLowerCase() : '';
+        if (!msg) return;
 
-        // Commande d'attaque: !attaque <pays> ou !attack <pays>
+        const processCommand = (territoryId, isDefense) => {
+            const added = AttackManager.addAttackCommand(game.id, territoryId, username, isDefense);
+            if (added) {
+                const updatedAttack = game.activeAttacks.get(territoryId);
+                this.notifyCommandProcessed(
+                    game.id,
+                    isDefense ? 'defense' : 'attack',
+                    username,
+                    territoryId,
+                    updatedAttack ? updatedAttack.toJSON() : null
+                );
+            }
+        };
+
         if (msg.startsWith('!attaque ') || msg.startsWith('!attack ')) {
             const target = msg.split(' ')[1];
-
-            // Trouver l'attaque où ce joueur est l'attaquant
             for (let [territoryId, attack] of game.activeAttacks) {
                 if (attack.attackerId === playerId && attack.status === 'ongoing') {
                     const targetMatch = this.doesTargetMatch(attack, territoryId, target);
-
                     if (targetMatch) {
-                        AttackManager.addAttackCommand(game.id, territoryId, username, false);
-                        this.notifyCommandProcessed(game.id, 'attack', username, territoryId);
+                        processCommand(territoryId, false);
                     }
                 }
             }
         }
 
-        // Commande de défense: !defend <pays> ou !defense <pays>
-        if (msg.startsWith('!defend ') || msg.startsWith('!defense ') || msg.startsWith('!défend ')) {
+        if (
+            msg.startsWith('!defend ') ||
+            msg.startsWith('!defense ') ||
+            msg.startsWith('!défend ')
+        ) {
             const target = msg.split(' ')[1];
-
-            // Trouver l'attaque où ce joueur est le défenseur
             for (let [territoryId, attack] of game.activeAttacks) {
                 if (attack.defenderId === playerId && attack.status === 'ongoing') {
                     const targetMatch = this.doesTargetMatch(attack, territoryId, target);
-
                     if (targetMatch) {
-                        AttackManager.addAttackCommand(game.id, territoryId, username, true);
-                        this.notifyCommandProcessed(game.id, 'defense', username, territoryId);
+                        processCommand(territoryId, true);
                     }
                 }
             }
         }
     }
 
-    notifyCommandProcessed(gameId, type, username, territoryId) {
+    notifyCommandProcessed(gameId, type, username, territoryId, attackData = null) {
         const handler = this.commandHandlers.get(gameId);
         if (handler) {
-            handler(type, username, territoryId);
+            handler(type, username, territoryId, attackData);
         }
     }
 
@@ -130,18 +251,37 @@ class TwitchService {
         this.commandHandlers.delete(gameId);
     }
 
-    // Envoyer un message dans le chat d'un streamer
     async sendMessage(playerId, message) {
-        const client = this.clients.get(playerId);
-        if (client && client.readyState() === 'OPEN') {
-            const channels = client.getChannels();
-            if (channels.length > 0) {
-                await client.say(channels[0], message);
-            }
+        const entry = this.getClientEntry(playerId);
+        if (!entry) return false;
+        const { client } = entry;
+
+        if (typeof client.readyState === 'function' && client.readyState() !== READY_STATE_OPEN) {
+            return false;
+        }
+
+        const channels = client.getChannels();
+        const targetChannel = Array.isArray(channels) && channels.length > 0 ? channels[0] : null;
+        if (!targetChannel) return false;
+
+        const options = typeof client.getOptions === 'function' ? client.getOptions() : client.opts;
+        const identity = options?.identity;
+        const hasIdentity = identity && typeof identity.username === 'string' && identity.username !== '' &&
+            typeof identity.password === 'string' && identity.password !== '';
+
+        if (!hasIdentity) {
+            return false;
+        }
+
+        try {
+            await client.say(targetChannel, message);
+            return true;
+        } catch (error) {
+            console.warn(`Failed to send Twitch message to ${targetChannel}: ${error.message}`);
+            return false;
         }
     }
 
-    // Annoncer le début d'une attaque
     async announceAttack(game, attack) {
         const attacker = game.players.find(p => p.id === attack.attackerId);
         const defender = game.players.find(p => p.id === attack.defenderId);
@@ -161,7 +301,6 @@ class TwitchService {
         }
     }
 
-    // Annoncer les résultats d'une attaque
     async announceResults(game, attack) {
         const winner = attack.winner;
         const attacker = game.players.find(p => p.id === attack.attackerId);
@@ -176,22 +315,12 @@ class TwitchService {
             resultMessage = `⚖️ Égalité ! Le territoire ${attack.toTerritoryName || attack.toTerritory} reste à ${defender?.twitchUsername}. (${attack.attackPoints} vs ${attack.defensePoints})`;
         }
 
-        // Envoyer aux deux streamers
         if (attacker) {
             await this.sendMessage(attack.attackerId, resultMessage);
         }
         if (defender) {
             await this.sendMessage(attack.defenderId, resultMessage);
         }
-    }
-
-    // Déconnecter tous les clients
-    async disconnectAll() {
-        for (let [playerId, client] of this.clients) {
-            await client.disconnect();
-        }
-        this.clients.clear();
-        this.commandHandlers.clear();
     }
 }
 

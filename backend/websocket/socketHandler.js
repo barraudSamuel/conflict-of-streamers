@@ -73,6 +73,11 @@ export function setupWebSocket(connection, req) {
                     type: 'player:connected',
                     playerId
                 });
+
+                const registerGame = GameManager.getGame(gameId);
+                if (registerGame) {
+                    await TwitchService.syncGameChannels(registerGame);
+                }
                 break;
 
             case 'game:update':
@@ -83,6 +88,7 @@ export function setupWebSocket(connection, req) {
                         type: 'game:state',
                         game: game.toJSON()
                     });
+                    await TwitchService.syncGameChannels(game);
                 }
                 break;
 
@@ -100,6 +106,10 @@ export function setupWebSocket(connection, req) {
                 }
 
                 const attackGame = GameManager.getGame(gameId);
+                if (attackGame) {
+                    await TwitchService.syncGameChannels(attackGame);
+                }
+
                 const attack = AttackManager.startAttack(
                     gameId,
                     attackerId,
@@ -134,12 +144,13 @@ export function setupWebSocket(connection, req) {
 
                 // Setup command handler pour cette partie (une seule fois)
                 if (!TwitchService.commandHandlers.has(gameId)) {
-                    TwitchService.setCommandHandler(gameId, (commandType, username, territoryId) => {
+                    TwitchService.setCommandHandler(gameId, (commandType, username, territoryId, attackData) => {
                         broadcastToGame(gameId, {
                             type: 'command:received',
                             commandType,
                             username,
                             territoryId,
+                            attack: attackData,
                             timestamp: Date.now()
                         });
                     });
@@ -154,9 +165,20 @@ export function setupWebSocket(connection, req) {
 
             case 'twitch:connect':
                 // Connecter au chat Twitch
-                const { channelName, oauthToken } = payload;
+                const { channelName } = payload;
                 try {
-                    await TwitchService.connectToChannel(playerId, channelName, oauthToken);
+                    const targetGameId = gameId || GameManager.getGameByPlayerId(playerId)?.id;
+                    if (!targetGameId) {
+                        throw new Error('Game context not found for player');
+                    }
+
+                    await TwitchService.connectToChannel(targetGameId, playerId, channelName);
+
+                    const currentGame = GameManager.getGame(targetGameId);
+                    if (currentGame) {
+                        await TwitchService.syncGameChannels(currentGame);
+                    }
+
                     socket.send(JSON.stringify({
                         type: 'twitch:connected',
                         channelName
@@ -186,6 +208,7 @@ export function setupWebSocket(connection, req) {
                     isReady: payload.isReady,
                     game: updatedGame.toJSON()
                 });
+                await TwitchService.syncGameChannels(updatedGame);
                 break;
 
             case 'territory:assign':
@@ -197,6 +220,7 @@ export function setupWebSocket(connection, req) {
                     territoryId: payload.territoryId,
                     game: gameWithTerritory.toJSON()
                 });
+                await TwitchService.syncGameChannels(gameWithTerritory);
                 break;
 
             case 'game:start':
@@ -206,6 +230,7 @@ export function setupWebSocket(connection, req) {
                     type: 'game:started',
                     game: startedGame.toJSON()
                 });
+                await TwitchService.syncGameChannels(startedGame);
                 break;
 
             case 'player:leave':
@@ -217,6 +242,7 @@ export function setupWebSocket(connection, req) {
                         playerId: payload.playerId,
                         game: leftGame.toJSON()
                     });
+                    await TwitchService.syncGameChannels(leftGame);
                 }
                 break;
 
@@ -305,6 +331,7 @@ export function setupWebSocket(connection, req) {
                     playerId: targetId,
                     game: updatedGame.toJSON()
                 });
+                await TwitchService.syncGameChannels(updatedGame);
                 break;
             }
 

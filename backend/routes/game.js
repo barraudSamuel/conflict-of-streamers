@@ -1,5 +1,6 @@
 import GameManager from '../managers/GameManager.js';
 import AttackManager from '../managers/AttackManager.js';
+import TwitchService from '../services/TwitchService.js';
 import { broadcastToGame } from '../websocket/socketHandler.js';
 
 export default async function gameRoutes(fastify) {
@@ -14,6 +15,7 @@ export default async function gameRoutes(fastify) {
             }
 
             const game = GameManager.createGame(adminId, twitchUsername, settings);
+            await TwitchService.syncGameChannels(game);
 
             return {
                 success: true,
@@ -34,6 +36,7 @@ export default async function gameRoutes(fastify) {
             }
 
             const game = GameManager.joinGame(code, playerId, twitchUsername);
+            await TwitchService.syncGameChannels(game);
 
             return {
                 success: true,
@@ -221,7 +224,10 @@ export default async function gameRoutes(fastify) {
                 return reply.code(400).send({ error: 'playerId is required' });
             }
 
-            GameManager.leaveGame(playerId);
+            const game = GameManager.leaveGame(playerId);
+            if (game) {
+                await TwitchService.syncGameChannels(game);
+            }
 
             return {
                 success: true,
