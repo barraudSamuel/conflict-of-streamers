@@ -370,7 +370,7 @@ const currentAttackEncouragement = computed(() => {
   if (!currentAttack.value) return ''
   const territoryName =
     currentAttack.value.toTerritoryName ?? currentAttack.value.toTerritory ?? 'le territoire'
-  return `Tapez ${attackCommandLabel.value} dans le chat pour booster l'attaque sur ${territoryName} !`
+  return `Tapez ${attackCommandLabel.value} dans le chat !`
 })
 
 const defendingEncouragement = computed(() => {
@@ -975,6 +975,7 @@ onBeforeUnmount(() => {
             :territories="game.territories ?? []"
             :players="game.players ?? []"
             :current-player-id="currentPlayerId"
+            :active-attacks="activeAttacks"
             :disable-interaction="false"
             @select="handleTerritorySelect"
         />
@@ -1252,7 +1253,7 @@ onBeforeUnmount(() => {
                   </div>
 
                   <div class="space-y-3 rounded-xl border border-white/10 bg-accent/60 p-4">
-                    <p class="text-sm font-medium text-emerald-300">
+                    <p class="text-2xl font-medium text-emerald-300">
                       {{ currentAttackEncouragement }}
                     </p>
                     <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
