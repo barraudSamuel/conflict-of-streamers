@@ -16,8 +16,6 @@ import {createGameSocket, sendSocketMessage, type SocketMessage} from '@/service
 import {getGame, leaveGame as leaveGameRequest, validateAttack} from '@/services/api'
 import {clearPlayerContext, loadPlayerContext, type PlayerContext} from '@/lib/playerStorage'
 import {
-  Crown,
-  Gamepad2,
   LogOut,
   SignalHigh,
   SignalLow,
@@ -858,39 +856,6 @@ onBeforeUnmount(() => {
         />
       </div>
 
-      <div class="pointer-events-none absolute left-4 bottom-4 z-30">
-        <div class="px-4 py-3 text-xs text-card-foreground rounded-xl border bg-card/70 backdrop-blur shadow-xl ring-1 ring-white/10">
-          <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Légende</p>
-          <ul class="space-y-2 text-slate-200">
-            <li class="flex items-center gap-3">
-              <span
-                  class="inline-flex size-3 rounded-full"
-                  :style="{ backgroundColor: currentPlayerColor }"
-              ></span>
-              <span>Vos territoires</span>
-            </li>
-            <li class="flex items-center gap-3">
-              <span
-                  class="inline-flex size-3 rounded-full"
-                  :style="{ backgroundColor: BOT_LEGEND_COLOR }"
-              ></span>
-              <span>Contrôle IA</span>
-            </li>
-            <li
-                v-for="entry in otherPlayerLegendEntries"
-                :key="entry.id"
-                class="flex items-center gap-3"
-            >
-              <span
-                  class="inline-flex size-3 rounded-full"
-                  :style="{ backgroundColor: entry.color }"
-              ></span>
-              <span>{{ entry.label }}</span>
-            </li>
-          </ul>
-        </div>
-      </div>
-
       <div
           v-if="scoreboardVisible"
           class="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-sm">
@@ -975,47 +940,70 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="pointer-events-none absolute inset-0 flex flex-col px-4 z-30">
-        <Card
-            class="pointer-events-auto mt-4 w-full max-w-5xl bg-card/70 backdrop-blur shadow-xl ring-1 ring-white/10 mx-auto">
-          <CardContent>
-            <div class="flex items-center justify-between">
-              <div class="flex flex-col gap-1">
-                <CardTitle class="flex items-center gap-2 text-lg font-semibold uppercase tracking-wide">
-                  <Gamepad2 class="size-5 text-primary"/>
-                  <span>En jeu</span>
-                </CardTitle>
-                <div class="flex flex-wrap items-center gap-3 text-sm">
-                <span class="flex items-center gap-2">
-                  <Crown class="size-4 text-yellow-400"/>
-                  <span>Host: <span class="font-semibold text-slate-100">{{ adminLabel }}</span></span>
-                </span>
-                  <span class="flex items-center gap-2">
-                  <Users class="size-4 text-emerald-300"/>
-                  <span>{{ playersSummary.length }} joueurs ({{ connectedPlayerCount }}/{{ playersSummary.length }} connectés)</span>
-                </span>
-                  <span class="flex items-center gap-2">
-                  <component :is="realtimeConnected ? SignalHigh : SignalLow" class="size-4"/>
-                  <span>{{ connectionStatusLabel }}</span>
-                </span>
-                </div>
-              </div>
-              <div class="flex flex-col gap-2 text-sm text-slate-300 md:flex-row md:items-center md:justify-end">
-                <Button
-                    variant="outline"
-                    class="pointer-events-auto w-full justify-center md:w-auto"
-                    @click="handleLeaveGame"
-                    :disabled="leavingGame"
-                >
-                  <LogOut class="size-4"/>
-                  <span v-if="!leavingGame">Quitter la partie</span>
-                  <span v-else>Déconnexion...</span>
-                </Button>
-                <p v-if="leaveError" class="text-xs text-red-400 md:text-right">{{ leaveError }}</p>
-                <p v-else-if="socketError" class="text-xs text-amber-300 md:text-right">{{ socketError }}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div class="pointer-events-none flex flex-wrap items-center justify-between gap-3 pt-4">
+          <div
+              class="pointer-events-auto inline-flex items-center gap-3 rounded-full bg-card/70 px-4 py-2 text-xs ring-2 ring-white/10 shadow-lg backdrop-blur">
+            <component :is="realtimeConnected ? SignalHigh : SignalLow" class="size-4 text-emerald-300"/>
+            <span class="font-medium text-slate-200">{{ connectionStatusLabel }}</span>
+            <span class="hidden sm:inline text-slate-600">•</span>
+            <span class="hidden sm:flex items-center gap-2">
+              <Users class="size-3 text-emerald-300"/>
+              <span>{{ connectedPlayerCount }}/{{ playersSummary.length }} connectés</span>
+            </span>
+            <span class="hidden md:flex items-center gap-2 text-slate-500">
+              <Kbd>Tab</Kbd>
+              <span>pour le tableau</span>
+            </span>
+          </div>
+          <div class="pointer-events-auto flex flex-wrap items-center gap-2 text-xs">
+            <p v-if="leaveError" class="text-red-400">{{ leaveError }}</p>
+            <p v-else-if="socketError" class="text-amber-300">{{ socketError }}</p>
+            <Button
+                variant="outline"
+                size="sm"
+                class="flex items-center gap-2"
+                @click="handleLeaveGame"
+                :disabled="leavingGame"
+            >
+              <LogOut class="size-4"/>
+              <span v-if="!leavingGame">Quitter</span>
+              <span v-else>Déconnexion...</span>
+            </Button>
+          </div>
+        </div>
+
+        <div class="w-fit mt-4">
+          <div class="px-4 py-3 text-xs text-card-foreground rounded-xl border bg-card/70 backdrop-blur shadow-xl ring-1 ring-white/10">
+            <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Légende</p>
+            <ul class="space-y-2 text-slate-200">
+              <li class="flex items-center gap-3">
+              <span
+                  class="inline-flex size-3 rounded-full"
+                  :style="{ backgroundColor: currentPlayerColor }"
+              ></span>
+                <span>Vos territoires</span>
+              </li>
+              <li class="flex items-center gap-3">
+              <span
+                  class="inline-flex size-3 rounded-full"
+                  :style="{ backgroundColor: BOT_LEGEND_COLOR }"
+              ></span>
+                <span>Contrôle IA</span>
+              </li>
+              <li
+                  v-for="entry in otherPlayerLegendEntries"
+                  :key="entry.id"
+                  class="flex items-center gap-3"
+              >
+              <span
+                  class="inline-flex size-3 rounded-full"
+                  :style="{ backgroundColor: entry.color }"
+              ></span>
+                <span>{{ entry.label }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
 
         <main class="relative flex flex-1">
           <section class="pointer-events-none flex flex-1 flex-col items-center justify-end">
