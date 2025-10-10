@@ -739,29 +739,11 @@ const handleSocketMessage = (message: SocketMessage) => {
         setPlayerConnection(message.playerId, false)
       }
       break
-    case 'command:received': {
+    case 'command:received':
       if (message.attack && message.territoryId) {
         applyAttackUpdate(message.attack, message.territoryId)
       }
-
-      const chatUser = typeof message.username === 'string' && message.username.trim() !== '' ? message.username.trim() : 'Anonyme'
-      const territory = typeof message.territoryId === 'string' ? getTerritory(message.territoryId) : null
-      const territoryLabel = territory?.name ?? message.territoryId ?? 'un territoire'
-      const isDefense = message.commandType === 'defense'
-
-      const fragments: ActionLogFragment[] = isDefense
-        ? [
-            { text: chatUser, color: '#cbd5f5' },
-            { text: ` renforce la défense sur ${territoryLabel}.` }
-          ]
-        : [
-            { text: chatUser, color: '#cbd5f5' },
-            { text: ` attaque sur ${territoryLabel}!` }
-          ]
-
-      addActionHistoryEntry(fragments, isDefense ? 'info' : 'success')
       break
-    }
     case 'player:kick-notice':
       manualDisconnect = true
       clearReconnectTimer()
