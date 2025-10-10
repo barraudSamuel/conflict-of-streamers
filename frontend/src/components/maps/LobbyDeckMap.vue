@@ -92,15 +92,30 @@ interface AttackArrowDatum {
 
 type Coordinate2D = [number, number]
 
+const toCoordinate2D = (value: unknown): Coordinate2D | null => {
+  if (!Array.isArray(value) || value.length < 2) {
+    return null
+  }
+  const [lon, lat] = value
+  if (typeof lon !== 'number' || typeof lat !== 'number' || Number.isNaN(lon) || Number.isNaN(lat)) {
+    return null
+  }
+  return [lon, lat]
+}
+
 const collectBoundaryPoints = (feature: LobbyTerritoryFeature): Coordinate2D[] => {
   const geometry = feature.geometry
   const points: Coordinate2D[] = []
 
   const pushRing = (ring: number[][]) => {
     ring.forEach((coordinate) => {
-      if (!Array.isArray(coordinate) || coordinate.length < 2) return
-      const lon = coordinate[0]
-      const lat = coordinate[1]
+      if (!Array.isArray(coordinate)) {
+        return
+      }
+      const [lon, lat] = coordinate
+      if (typeof lon !== 'number' || typeof lat !== 'number') {
+        return
+      }
       if (Number.isFinite(lon) && Number.isFinite(lat)) {
         points.push([lon, lat])
       }
@@ -110,13 +125,13 @@ const collectBoundaryPoints = (feature: LobbyTerritoryFeature): Coordinate2D[] =
   if (geometry.type === 'Polygon') {
     const outer = geometry.coordinates[0]
     if (Array.isArray(outer)) {
-      pushRing(outer)
+      pushRing(outer as number[][])
     }
   } else if (geometry.type === 'MultiPolygon') {
     geometry.coordinates.forEach((polygon) => {
       const outer = polygon[0]
       if (Array.isArray(outer)) {
-        pushRing(outer)
+        pushRing(outer as number[][])
       }
     })
   }
@@ -194,11 +209,15 @@ const getFeatureSegments = (feature: LobbyTerritoryFeature): BoundarySegment[] =
 
   if (geometry.type === 'Polygon') {
     const outer = geometry.coordinates[0]
-    pushRingSegments(outer)
+    if (Array.isArray(outer)) {
+      pushRingSegments(outer as number[][])
+    }
   } else if (geometry.type === 'MultiPolygon') {
     geometry.coordinates.forEach((polygon) => {
       const outer = polygon[0]
-      pushRingSegments(outer)
+      if (Array.isArray(outer)) {
+        pushRingSegments(outer as number[][])
+      }
     })
   }
 
@@ -273,14 +292,14 @@ const defenseLabels = computed<DefenseLabelDatum[]>(() =>
       }
 
       const feature = territoryFeatureLookup.get(territory.id)
-      const labelPosition = feature?.properties?.labelPosition
-      if (!labelPosition || !Array.isArray(labelPosition) || labelPosition.length < 2) {
+      const labelPosition = toCoordinate2D(feature?.properties?.labelPosition)
+      if (!labelPosition) {
         return null
       }
 
       const info = territoryState.value.get(territory.id)
       return {
-        position: labelPosition as [number, number],
+        position: labelPosition,
         defense: territory.defensePower,
         isCurrent: info?.ownerId === props.currentPlayerId,
         isBot: info?.isBot ?? false
@@ -372,12 +391,16 @@ const attackArrowMarkers = computed<AttackArrowDatum[]>(() => {
       return
     }
 
-    const fromLabel = Array.isArray(fromFeature.properties?.labelPosition)
-      ? (fromFeature.properties?.labelPosition.slice(0, 2) as Coordinate2D)
-      : null
-    const toLabel = Array.isArray(toFeature.properties?.labelPosition)
-      ? (toFeature.properties?.labelPosition.slice(0, 2) as Coordinate2D)
-      : null
+    const fromLabel = toCoordinate2D(
+      Array.isArray(fromFeature.properties?.labelPosition)
+        ? fromFeature.properties?.labelPosition.slice(0, 2)
+        : null
+    )
+    const toLabel = toCoordinate2D(
+      Array.isArray(toFeature.properties?.labelPosition)
+        ? toFeature.properties?.labelPosition.slice(0, 2)
+        : null
+    )
 
     const toCentroid = computeFeatureCentroid(toFeature)
     const fromCentroid = computeFeatureCentroid(fromFeature)
@@ -417,7 +440,7 @@ const attackArrowMarkers = computed<AttackArrowDatum[]>(() => {
           startPoint[0] + direction[0] * span * fraction,
           startPoint[1] + direction[1] * span * fraction
         ]
-        const angle = (Math.atan2(direction[1], direction[0]) * 180) / Math.PI
+        const angle = Math.atan2(direction[1], direction[0])
         markers.push({
           id: `${baseId}#fallback-${index}`,
           position,
@@ -459,7 +482,7 @@ const attackArrowMarkers = computed<AttackArrowDatum[]>(() => {
           basePoint[0] + finalDirection[0] * offsetMagnitude,
           basePoint[1] + finalDirection[1] * offsetMagnitude
         ]
-        const angle = (Math.atan2(finalDirection[1], finalDirection[0]) * 180) / Math.PI
+        const angle = Math.atan2(finalDirection[1], finalDirection[0])
         markers.push({
           id: `${baseId}#border-${index}`,
           position,
@@ -683,7 +706,6 @@ const createAttackArrowLayer = () =>
     getTextAnchor: () => 'middle',
     getAlignmentBaseline: () => 'center',
     getAngle: (item) => item.angle,
-    angleUnits: 'degrees',
     characterSet: '➤',
     parameters: {
       depthTest: false

@@ -1,0 +1,44 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      target: production
+    environment:
+      PORT: ${BACKEND_PORT:-3000}
+      FRONTEND_URL: https://${FRONTEND_DOMAIN:-app.example.com}
+    expose:
+      - ${BACKEND_PORT:-3000}
+    networks:
+      - dokploy-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cos-backend.rule=Host(`${BACKEND_DOMAIN:-api.example.com}`)"
+      - "traefik.http.routers.cos-backend.entrypoints=websecure"
+      - "traefik.http.routers.cos-backend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.cos-backend.loadbalancer.server.port=${BACKEND_PORT:-3000}"
+
+  frontend:
+    build:
+      context: ./frontend
+      target: production
+      args:
+        VITE_API_URL: https://${BACKEND_DOMAIN:-api.example.com}
+        VITE_WS_URL: wss://${BACKEND_DOMAIN:-api.example.com}/ws
+    depends_on:
+      - backend
+    expose:
+      - 80
+    networks:
+      - dokploy-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cos-frontend.rule=Host(`${FRONTEND_DOMAIN:-app.example.com}`)"
+      - "traefik.http.routers.cos-frontend.entrypoints=websecure"
+      - "traefik.http.routers.cos-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.cos-frontend.loadbalancer.server.port=80"
+
+networks:
+  dokploy-network:
+    external: true

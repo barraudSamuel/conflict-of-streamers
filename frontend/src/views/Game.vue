@@ -368,8 +368,6 @@ const defendingAttackProgress = computed(() => {
 
 const currentAttackEncouragement = computed(() => {
   if (!currentAttack.value) return ''
-  const territoryName =
-    currentAttack.value.toTerritoryName ?? currentAttack.value.toTerritory ?? 'le territoire'
   return `Tapez ${attackCommandLabel.value} dans le chat !`
 })
 
