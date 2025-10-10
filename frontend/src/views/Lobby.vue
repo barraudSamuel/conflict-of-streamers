@@ -360,7 +360,29 @@ const territorySelectionError = ref('')
 const selectingTerritory = ref(false)
 
 const source = computed(() => game.value?.code ?? '')
+const showRealCode = ref(false)
+const obfuscatedGameCode = computed(() => {
+  const code = game.value?.code
+  if (typeof code === 'string' && code.length > 0) {
+    return '·'.repeat(code.length)
+  }
+  return '····'
+})
+const displayedGameCode = computed(() => {
+  const realCode = game.value?.code
+  if (showRealCode.value && typeof realCode === 'string' && realCode.length > 0) {
+    return realCode
+  }
+  return obfuscatedGameCode.value
+})
 const { copy, copied } = useClipboard({ source })
+
+watch(
+  () => game.value?.code,
+  () => {
+    showRealCode.value = false
+  }
+)
 
 const fetchGame = async () => {
   try {
@@ -606,7 +628,13 @@ const handleTerritorySelect = async (territoryId: string) => {
             <div class="space-y-2">
               <div class="flex items-center gap-2 text-2xl font-bold">
                 <Gamepad2 class="w-8 h-8" />
-                <span>Code: {{ game.code }}</span>
+                <span
+                  class="cursor-pointer tracking-widest"
+                  @mouseenter="showRealCode = true"
+                  @mouseleave="showRealCode = false"
+                >
+                  Code: {{ displayedGameCode }}
+                </span>
               </div>
               <div class="flex items-center gap-2 text-sm text-slate-300">
                 <Crown class="w-4 h-4 text-yellow-500" />

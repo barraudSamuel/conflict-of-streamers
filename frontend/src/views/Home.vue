@@ -199,6 +199,7 @@ const tutorial = [
                 <Label for="join-code">Code session</Label>
                 <Input
                   id="join-code"
+                  type="password"
                   v-model="joinCode"
                   placeholder="ABC123"
                   class="uppercase"
