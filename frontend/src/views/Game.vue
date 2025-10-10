@@ -9,6 +9,13 @@ import {
   CardHeader,
   CardTitle
 } from '@/components/ui/card'
+import Dialog from '@/components/ui/dialog/Dialog.vue'
+import DialogContent from '@/components/ui/dialog/DialogContent.vue'
+import DialogDescription from '@/components/ui/dialog/DialogDescription.vue'
+import DialogFooter from '@/components/ui/dialog/DialogFooter.vue'
+import DialogHeader from '@/components/ui/dialog/DialogHeader.vue'
+import DialogTitle from '@/components/ui/dialog/DialogTitle.vue'
+import DialogClose from '@/components/ui/dialog/DialogClose.vue'
 import {Kbd} from '@/components/ui/kbd'
 import {ScrollArea} from '@/components/ui/scroll-area'
 import LobbyDeckMap from '@/components/maps/LobbyDeckMap.vue'
@@ -23,8 +30,21 @@ import {
   Swords,
   Users,
   OctagonMinus,
-  OctagonX
+  OctagonX,
+  X,
+  Trophy
 } from 'lucide-vue-next'
+
+// Mark template-only imports as used for vue-tsc when noUnusedLocals is enabled.
+void Dialog
+void DialogContent
+void DialogDescription
+void DialogFooter
+void DialogHeader
+void DialogTitle
+void DialogClose
+void X
+void Trophy
 
 const route = useRoute()
 const router = useRouter()
@@ -41,6 +61,12 @@ const playerContext = ref<PlayerContext | null>(null)
 const leavingGame = ref(false)
 const leaveError = ref('')
 const scoreboardVisible = ref(false)
+const lossModalVisible = ref(false)
+const hasOwnedTerritory = ref(false)
+const winnerModalVisible = ref(false)
+const winnerPlayerId = ref<string | null>(null)
+const hasAnnouncedWinner = ref(false)
+const hadMultipleHumanPlayers = ref(false)
 const selectedOwnedTerritoryId = ref<string | null>(null)
 const targetTerritoryId = ref<string | null>(null)
 const attackError = ref('')
@@ -97,6 +123,10 @@ interface PlayerSummary {
   connected: boolean
 }
 
+type RankingEntry = PlayerSummary & { rank: number }
+
+const finalRanking = ref<RankingEntry[]>([])
+
 interface BattleBalance {
   attackPercent: number
   defensePercent: number
@@ -112,6 +142,10 @@ const territoryCounts = computed<Record<string, number>>(() => {
     return acc
   }, {})
 })
+
+const currentPlayerTerritoryCount = computed(
+  () => territoryCounts.value[currentPlayerId.value] ?? 0
+)
 
 const playersSummary = computed<PlayerSummary[]>(() => {
   if (!game.value?.players) return []
@@ -135,6 +169,47 @@ const playersSummary = computed<PlayerSummary[]>(() => {
     return a.twitchUsername.localeCompare(b.twitchUsername)
   })
 })
+
+const isBotPlayer = (playerId: string | null | undefined) =>
+  typeof playerId === 'string' && playerId.startsWith('bot:')
+
+const humanPlayersSummary = computed<PlayerSummary[]>(() =>
+  playersSummary.value.filter((player) => !isBotPlayer(player.id))
+)
+
+const survivingHumanPlayers = computed<PlayerSummary[]>(() =>
+  humanPlayersSummary.value.filter((player) => player.territories > 0)
+)
+
+const rankingForDisplay = computed<RankingEntry[]>(() => {
+  if (finalRanking.value.length) {
+    return finalRanking.value
+  }
+
+  return playersSummary.value.map((player, index) => ({
+    ...player,
+    rank: index + 1
+  }))
+})
+
+const winnerSummary = computed<RankingEntry | null>(() => {
+  if (!winnerPlayerId.value) return null
+  return (
+    rankingForDisplay.value.find((entry) => entry.id === winnerPlayerId.value) ?? null
+  )
+})
+
+const winnerDisplayName = computed(() => {
+  if (!winnerPlayerId.value) return 'Joueur'
+  return (
+    getPlayerUsername(winnerPlayerId.value) ??
+    winnerSummary.value?.twitchUsername ??
+    'Joueur'
+  )
+})
+
+// Template-only computed to satisfy noUnusedLocals during type-checking.
+void winnerDisplayName
 
 const connectionStatusLabel = computed(() =>
     realtimeConnected.value ? 'Connecté au serveur temps réel' : 'Reconnexion...'
@@ -395,9 +470,7 @@ const currentAttackEncouragement = computed(() => {
 
 const defendingEncouragement = computed(() => {
   if (!defendingAttack.value) return ''
-  const territoryName =
-    defendingAttack.value.toTerritoryName ?? defendingAttack.value.toTerritory ?? 'ce territoire'
-  return `Tapez ${defenseCommandLabel.value} dans le chat pour défendre ${territoryName} !`
+  return `Tapez ${defenseCommandLabel.value} dans le chat !`
 })
 
 const clearReconnectTimer = () => {
@@ -793,6 +866,34 @@ const cancelSelection = () => {
   attackError.value = ''
 }
 
+const captureFinalRanking = (): RankingEntry[] =>
+  playersSummary.value.map((player, index) => ({
+    ...player,
+    rank: index + 1
+  }))
+
+const resetWinnerState = () => {
+  winnerModalVisible.value = false
+  winnerPlayerId.value = null
+  hasAnnouncedWinner.value = false
+  finalRanking.value = []
+}
+
+const openWinnerModal = (winnerId: string) => {
+  winnerPlayerId.value = winnerId
+  finalRanking.value = captureFinalRanking()
+  hasAnnouncedWinner.value = true
+  lossModalVisible.value = false
+  winnerModalVisible.value = true
+}
+
+const closeWinnerModal = () => {
+  winnerModalVisible.value = false
+}
+
+// Ensure the handler is marked as used for vue-tsc template analysis.
+void closeWinnerModal
+
 const handleTerritorySelect = (territoryId: string) => {
   attackError.value = ''
 
@@ -964,13 +1065,56 @@ const handleTabKeyUp = (event: KeyboardEvent) => {
 }
 
 watch(
-    () => game.value?.status,
-    (status) => {
-      if (!status || !game.value?.id) return
-      if (status === 'lobby') {
-        router.replace(`/lobby/${game.value.id}`)
-      }
+  () => game.value?.status,
+  (status) => {
+    if (!status || !game.value?.id) return
+    if (status === 'lobby') {
+      hasOwnedTerritory.value = false
+      lossModalVisible.value = false
+      hadMultipleHumanPlayers.value = false
+      resetWinnerState()
+      router.replace(`/lobby/${game.value.id}`)
     }
+  }
+)
+
+watch(
+  () => humanPlayersSummary.value.length,
+  (count) => {
+    if (count > 1) {
+      hadMultipleHumanPlayers.value = true
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  [() => survivingHumanPlayers.value.length, () => game.value?.status],
+  ([aliveCount, status], [prevAlive]) => {
+    if (!status || status === 'lobby') {
+      return
+    }
+
+    const previousAlive = typeof prevAlive === 'number' ? prevAlive : null
+
+    if (aliveCount === 1 && !hasAnnouncedWinner.value) {
+      const winner = survivingHumanPlayers.value[0]
+      if (!winner) return
+
+      const shouldAnnounce =
+        status === 'finished' ||
+        hadMultipleHumanPlayers.value ||
+        (previousAlive !== null && previousAlive > 1)
+
+      if (shouldAnnounce) {
+        openWinnerModal(winner.id)
+      }
+    } else if (status === 'finished' && aliveCount === 0 && !hasAnnouncedWinner.value) {
+      // Tous les joueurs humains ont été éliminés. Aucune annonce à faire.
+      hasAnnouncedWinner.value = true
+    }
+  },
+  { immediate: true }
 )
 
 watch(selectedOwnedTerritory, (territory) => {
@@ -978,6 +1122,28 @@ watch(selectedOwnedTerritory, (territory) => {
     cancelSelection()
   }
 })
+
+watch(
+  currentPlayerTerritoryCount,
+  (count, previousCount) => {
+    if (count > 0) {
+      hasOwnedTerritory.value = true
+      if (lossModalVisible.value) {
+        lossModalVisible.value = false
+      }
+      return
+    }
+
+    if (
+      hasOwnedTerritory.value &&
+      typeof previousCount === 'number' &&
+      previousCount > 0 &&
+      game.value?.status !== 'lobby'
+    ) {
+      lossModalVisible.value = true
+    }
+  }
+)
 
 watch(
   [selectedOwnedTerritory, targetTerritory],
@@ -1059,6 +1225,9 @@ onBeforeUnmount(() => {
     socket.value.close()
     socket.value = null
   }
+  resetWinnerState()
+  hadMultipleHumanPlayers.value = false
+  lossModalVisible.value = false
 })
 </script>
 
@@ -1221,6 +1390,141 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+
+      <Dialog :open="lossModalVisible" @update:open="(value) => (lossModalVisible = value)">
+        <DialogContent
+            :overlay-class="'bg-slate-950/75 backdrop-blur-sm'"
+            class="w-full max-w-md space-y-4 border-red-500/30 bg-slate-950/90 p-6 sm:max-h-[85vh] sm:overflow-y-auto sm:p-8"
+        >  
+          <DialogHeader class="items-start gap-3 text-left">
+            <div class="flex items-center gap-3">
+              <span class="flex size-10 items-center justify-center rounded-full bg-red-500/15 ring-1 ring-red-400/40">
+                <OctagonX class="size-5 text-red-300"/>
+              </span>
+              <div class="space-y-1">
+                <DialogTitle class="text-left text-xl text-red-300">
+                  Vous avez perdu
+                </DialogTitle>
+                <DialogDescription class="text-left leading-relaxed text-slate-300">
+                  Vous n'avez plus de territoire sous votre contrôle. Restez en spectateur ou
+                  quittez la partie quand vous le souhaitez.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <DialogFooter>
+            <DialogClose as-child>
+              <Button variant="secondary" class="w-full sm:w-auto">
+                Compris
+              </Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog :open="winnerModalVisible" @update:open="(value) => (winnerModalVisible = value)">
+        <DialogContent
+            :overlay-class="'bg-slate-950/80 backdrop-blur'"
+            class="w-full max-w-4xl space-y-6 border-emerald-400/30 bg-slate-950/90 p-6 sm:max-h-[85vh] sm:overflow-y-auto sm:p-10"
+        >  
+          <DialogHeader class="items-start gap-4 text-left">
+            <div class="flex items-start gap-4">
+              <span class="flex size-12 items-center justify-center rounded-full bg-emerald-400/15 ring-1 ring-emerald-400/40">
+                <Trophy class="size-7 text-emerald-300"/>
+              </span>
+              <div class="space-y-2">
+                <DialogTitle class="text-left text-2xl text-emerald-200 sm:text-3xl">
+                  {{ winnerDisplayName }} remporte la partie !
+                </DialogTitle>
+                <DialogDescription class="text-left text-slate-300">
+                  Tous les autres joueurs ont été conquis. Les bots restants ne bloquent pas la victoire.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div class="rounded-2xl border border-white/10 bg-slate-900/70">
+            <div class="flex items-center justify-between gap-3 border-b border-white/5 px-6 py-4">
+              <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-400">
+                Classement final
+              </h3>
+              <span class="text-xs text-slate-500">
+                Trié par territoires puis par score global.
+              </span>
+            </div>
+            <ScrollArea class="max-h-[320px]">
+              <ul class="space-y-2 px-4 py-4">
+                <li
+                    v-for="entry in rankingForDisplay"
+                    :key="`ranking-${entry.id}`"
+                    class="flex items-center justify-between rounded-xl border px-4 py-3 transition"
+                    :class="entry.id === winnerPlayerId
+                      ? 'border-emerald-400/60 bg-emerald-400/15 text-slate-100 shadow-lg shadow-emerald-500/10'
+                      : 'border-white/10 bg-slate-900/70 text-slate-300'"
+                >
+                  <div class="flex items-center gap-4">
+                    <span
+                        class="text-lg font-semibold"
+                        :class="entry.id === winnerPlayerId ? 'text-emerald-300' : 'text-slate-200'"
+                    >
+                      #{{ entry.rank }}
+                    </span>
+                    <span
+                        class="inline-flex size-3 rounded-full ring-2 ring-white/20"
+                        :style="{ backgroundColor: entry.color || '#94a3b8' }"
+                    ></span>
+                    <div class="flex flex-col">
+                      <span class="font-semibold text-slate-100">
+                        {{ entry.twitchUsername }}
+                      </span>
+                      <span
+                          v-if="entry.id === winnerPlayerId"
+                          class="text-xs text-emerald-300"
+                      >
+                        Dernier joueur en vie
+                      </span>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-4 text-xs text-slate-400">
+                    <span>
+                      Territoires
+                      <span class="ml-1 font-semibold text-slate-100">{{ entry.territories }}</span>
+                    </span>
+                    <span>
+                      Score
+                      <span class="ml-1 font-semibold text-slate-100">{{ entry.score }}</span>
+                    </span>
+                  </div>
+                </li>
+              </ul>
+            </ScrollArea>
+          </div>
+
+          <DialogFooter class="sm:justify-between">
+            <div class="hidden text-xs text-slate-500 sm:block">
+              Merci d'avoir joué ! Vous pouvez continuer à observer la carte ou quitter la partie.
+            </div>
+            <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
+              <DialogClose as-child>
+                <Button variant="secondary" class="w-full sm:w-auto" @click="closeWinnerModal">
+                  Continuer
+                </Button>
+              </DialogClose>
+              <Button
+                  variant="outline"
+                  class="w-full sm:w-auto"
+                  :disabled="leavingGame"
+                  @click="handleLeaveGame"
+              >
+                <LogOut class="size-4"/>
+                <span v-if="!leavingGame">Quitter la partie</span>
+                <span v-else>Déconnexion...</span>
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div class="pointer-events-none absolute inset-0 flex flex-col px-4 z-30">
         <div class="pointer-events-none flex flex-wrap items-center justify-between gap-3 pt-4">
