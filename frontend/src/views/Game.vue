@@ -95,6 +95,11 @@ interface PlayerSummary {
   connected: boolean
 }
 
+interface BattleBalance {
+  attackPercent: number
+  defensePercent: number
+}
+
 const territoryCounts = computed<Record<string, number>>(() => {
   if (!game.value?.territories) return {}
   const territories: any[] = Array.isArray(game.value.territories) ? game.value.territories : []
@@ -330,11 +335,25 @@ const currentAttackStats = computed(() => {
   }
 })
 
-const currentAttackProgress = computed(() => {
+const calculateBattleBalance = (attackPoints: number, defensePoints: number): BattleBalance => {
+  const safeAttack = Number.isFinite(attackPoints) ? Math.max(0, attackPoints) : 0
+  const safeDefense = Number.isFinite(defensePoints) ? Math.max(0, defensePoints) : 0
+  const total = safeAttack + safeDefense
+  if (total <= 0) {
+    return { attackPercent: 0, defensePercent: 0 }
+  }
+
+  const attackPercent = Math.round((safeAttack / total) * 100)
+  const defensePercent = Math.max(0, Math.min(100, 100 - attackPercent))
+  return { attackPercent, defensePercent }
+}
+
+const currentAttackBalance = computed<BattleBalance>(() => {
   const stats = currentAttackStats.value
-  if (!stats) return 0
-  const denominator = Math.max(1, stats.defensePoints || stats.baseDefense || 1)
-  return Math.max(0, Math.min(100, Math.round((stats.attackPoints / denominator) * 100)))
+  if (!stats) {
+    return { attackPercent: 0, defensePercent: 0 }
+  }
+  return calculateBattleBalance(stats.attackPoints, stats.defensePoints)
 })
 
 const defendingAttackStats = computed(() => {
@@ -359,11 +378,12 @@ const defendingAttackStats = computed(() => {
   }
 })
 
-const defendingAttackProgress = computed(() => {
+const defendingAttackBalance = computed<BattleBalance>(() => {
   const stats = defendingAttackStats.value
-  if (!stats) return 0
-  const denominator = Math.max(1, stats.defensePoints || stats.baseDefense || 1)
-  return Math.max(0, Math.min(100, Math.round((stats.defensePoints / denominator) * 100)))
+  if (!stats) {
+    return { attackPercent: 0, defensePercent: 0 }
+  }
+  return calculateBattleBalance(stats.attackPoints, stats.defensePoints)
 })
 
 const currentAttackEncouragement = computed(() => {
@@ -1291,11 +1311,34 @@ onBeforeUnmount(() => {
                         <span class="font-semibold text-slate-100">{{ currentAttackStats.defensePoints }}</span>
                       </span>
                     </div>
-                    <div class="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                      <div
-                          class="h-full bg-primary transition-all duration-500"
-                          :style="{ width: `${currentAttackProgress}%` }"
-                      ></div>
+                    <div class="space-y-2">
+                      <div class="relative h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                        <div
+                            class="absolute inset-y-0 left-0 bg-primary transition-all duration-500"
+                            :style="{ width: `${currentAttackBalance.attackPercent}%` }"
+                        ></div>
+                        <div
+                            class="absolute inset-y-0 right-0 bg-amber-400 transition-all duration-500"
+                            :style="{ width: `${currentAttackBalance.defensePercent}%` }"
+                        ></div>
+                        <div class="absolute inset-y-0 left-1/2 w-1 -translate-x-1/2 transform bg-white/60"></div>
+                      </div>
+                      <div class="flex items-center justify-between text-[11px] text-slate-400">
+                        <span
+                            class="flex items-center gap-2"
+                            :class="currentAttackBalance.attackPercent > 50 ? 'font-semibold text-slate-200' : ''"
+                        >
+                          <span class="inline-block h-2 w-2 rounded-full bg-primary"></span>
+                          Attaque {{ currentAttackBalance.attackPercent }}%
+                        </span>
+                        <span
+                            class="flex items-center gap-2"
+                            :class="currentAttackBalance.defensePercent > 50 ? 'font-semibold text-slate-200' : ''"
+                        >
+                          <span class="inline-block h-2 w-2 rounded-full bg-amber-400"></span>
+                          Défense {{ currentAttackBalance.defensePercent }}%
+                        </span>
+                      </div>
                     </div>
                     <p class="text-xs text-slate-500">
                       Base de défense : {{ currentAttackStats.baseDefense }}
@@ -1326,7 +1369,7 @@ onBeforeUnmount(() => {
                   </div>
 
                   <div class="space-y-3 rounded-xl border border-white/10 bg-accent/60 p-4">
-                    <p class="text-sm font-medium text-amber-200">
+                    <p class="text-2xl font-medium text-amber-200">
                       {{ defendingEncouragement }}
                     </p>
                     <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
@@ -1340,11 +1383,34 @@ onBeforeUnmount(() => {
                         <span class="font-semibold text-slate-100">{{ defendingAttackStats.attackPoints }}</span>
                       </span>
                     </div>
-                    <div class="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                      <div
-                          class="h-full bg-amber-400 transition-all duration-500"
-                          :style="{ width: `${defendingAttackProgress}%` }"
-                      ></div>
+                    <div class="space-y-2">
+                      <div class="relative h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                        <div
+                            class="absolute inset-y-0 left-0 bg-primary/80 transition-all duration-500"
+                            :style="{ width: `${defendingAttackBalance.attackPercent}%` }"
+                        ></div>
+                        <div
+                            class="absolute inset-y-0 right-0 bg-amber-400 transition-all duration-500"
+                            :style="{ width: `${defendingAttackBalance.defensePercent}%` }"
+                        ></div>
+                        <div class="absolute inset-y-0 left-1/2 w-1 -translate-x-1/2 transform bg-white/60"></div>
+                      </div>
+                      <div class="flex items-center justify-between text-[11px] text-slate-400">
+                        <span
+                            class="flex items-center gap-2"
+                            :class="defendingAttackBalance.attackPercent > 50 ? 'font-semibold text-slate-200' : ''"
+                        >
+                          <span class="inline-block h-2 w-2 rounded-full bg-primary/80"></span>
+                          Attaque {{ defendingAttackBalance.attackPercent }}%
+                        </span>
+                        <span
+                            class="flex items-center gap-2"
+                            :class="defendingAttackBalance.defensePercent > 50 ? 'font-semibold text-slate-200' : ''"
+                        >
+                          <span class="inline-block h-2 w-2 rounded-full bg-amber-400"></span>
+                          Défense {{ defendingAttackBalance.defensePercent }}%
+                        </span>
+                      </div>
                     </div>
                     <p class="text-xs text-slate-500">
                       Base de défense : {{ defendingAttackStats.baseDefense }}
