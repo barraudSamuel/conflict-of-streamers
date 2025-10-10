@@ -202,12 +202,12 @@ class AttackManager {
         return attack;
     }
 
-    cancelAttack(gameId, territoryId) {
+    cancelAttack(gameId, territoryId, options = {}) {
         const game = GameManager.getGame(gameId);
-        if (!game) return;
+        if (!game) return null;
 
         const attack = game.activeAttacks.get(territoryId);
-        if (!attack) return;
+        if (!attack) return null;
 
         const interval = this.attackTimers.get(attack.id);
         if (interval) {
@@ -215,7 +215,13 @@ class AttackManager {
             this.attackTimers.delete(attack.id);
         }
 
+        const { cancelledBy = null, reason = 'manual' } = options || {};
+        attack.cancel(cancelledBy, reason);
+
+        const attackData = attack.toJSON();
         game.removeAttack(territoryId);
+
+        return attackData;
     }
 
     getAttack(gameId, territoryId) {

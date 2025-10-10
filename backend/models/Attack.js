@@ -52,12 +52,15 @@ export class Attack {
         this.defenseFrontiers = nonNegativeOr(options.defenseFrontiers, 0);
         this.defenseFrontierFactor = positiveOr(options.defenseFrontierFactor, 1);
 
-        this.status = 'ongoing'; // ongoing | finished
+        this.status = 'ongoing'; // ongoing | finished | cancelled
         this.startTime = Date.now();
         this.endTime = this.startTime + (duration * 1000);
         this.winner = null;
         this.participantAttackers = new Set();
         this.participantDefenders = new Set();
+        this.cancelledBy = null;
+        this.cancelledAt = null;
+        this.cancelReason = null;
     }
 
     getUniqueAttackers() {
@@ -120,7 +123,25 @@ export class Attack {
     }
 
     isFinished() {
-        return Date.now() >= this.endTime || this.status === 'finished';
+        return this.status !== 'ongoing' || Date.now() >= this.endTime;
+    }
+
+    cancel(cancelledBy = null, reason = 'manual') {
+        if (this.status !== 'ongoing') {
+            return this.status;
+        }
+
+        this.recalculateAttackPower();
+        this.recalculateDefensePower();
+
+        this.status = 'cancelled';
+        this.cancelledBy = cancelledBy ?? null;
+        this.cancelReason = reason ?? null;
+        this.cancelledAt = Date.now();
+        this.endTime = this.cancelledAt;
+        this.winner = null;
+
+        return this.status;
     }
 
     finish() {
@@ -165,6 +186,9 @@ export class Attack {
             endTime: this.endTime,
             remainingTime: this.getRemainingTime(),
             winner: this.winner,
+            cancelledBy: this.cancelledBy,
+            cancelledAt: this.cancelledAt,
+            cancelReason: this.cancelReason,
             participantCount: {
                 attackers: this.participantAttackers.size,
                 defenders: this.participantDefenders.size

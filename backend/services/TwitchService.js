@@ -301,6 +301,29 @@ class TwitchService {
         }
     }
 
+    async announceAttackCancellation(game, attack) {
+        if (!attack) return;
+
+        const territoryLabel = attack.toTerritoryName || attack.toTerritory || attack.territoryId || 'ce territoire';
+        const attacker = game.players.find(p => p.id === attack.attackerId);
+        const defender = game.players.find(p => p.id === attack.defenderId);
+
+        if (attacker) {
+            await this.sendMessage(
+                attack.attackerId,
+                `⏹️ Attaque annulée sur ${territoryLabel}.`
+            );
+        }
+
+        if (defender) {
+            const attackerName = attacker?.twitchUsername || "L'attaquant";
+            await this.sendMessage(
+                attack.defenderId,
+                `😮‍💨 ${attackerName} a annulé son attaque sur ${territoryLabel}.`
+            );
+        }
+    }
+
     async announceResults(game, attack) {
         const winner = attack.winner;
         const attacker = game.players.find(p => p.id === attack.attackerId);

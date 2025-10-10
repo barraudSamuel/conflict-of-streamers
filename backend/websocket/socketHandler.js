@@ -163,6 +163,89 @@ export function setupWebSocket(connection, req) {
                 });
                 break;
 
+            case 'attack:cancel': {
+                if (!playerId) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Player not registered'
+                    }));
+                    break;
+                }
+
+                const targetTerritoryId = payload?.territoryId;
+                const expectedAttackId = payload?.attackId;
+
+                if (!targetTerritoryId) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'territoryId is required to cancel an attack'
+                    }));
+                    break;
+                }
+
+                const cancelGame = GameManager.getGameByPlayerId(playerId);
+                if (!cancelGame) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Game not found'
+                    }));
+                    break;
+                }
+
+                const activeAttack = AttackManager.getAttack(cancelGame.id, targetTerritoryId);
+                if (!activeAttack) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'No active attack found for this territory'
+                    }));
+                    break;
+                }
+
+                if (expectedAttackId && activeAttack.id !== expectedAttackId) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Attack identifier mismatch'
+                    }));
+                    break;
+                }
+
+                if (activeAttack.attackerId !== playerId) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Only the attacker can cancel this attack'
+                    }));
+                    break;
+                }
+
+                const cancelledAttack = AttackManager.cancelAttack(cancelGame.id, targetTerritoryId, {
+                    cancelledBy: playerId,
+                    reason: 'attacker_cancelled'
+                });
+
+                if (!cancelledAttack) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Failed to cancel the attack'
+                    }));
+                    break;
+                }
+
+                const cancelBroadcast = {
+                    type: 'attack:cancelled',
+                    attack: cancelledAttack,
+                    territoryId: targetTerritoryId,
+                    cancelledBy: playerId,
+                    reason: 'attacker_cancelled',
+                    game: cancelGame.toJSON()
+                };
+
+                broadcastToGame(cancelGame.id, cancelBroadcast);
+
+                await TwitchService.syncGameChannels(cancelGame);
+                await TwitchService.announceAttackCancellation(cancelGame, cancelledAttack);
+                break;
+            }
+
             case 'twitch:connect':
                 // Connecter au chat Twitch
                 const { channelName } = payload;

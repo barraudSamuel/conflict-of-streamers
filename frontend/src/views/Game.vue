@@ -22,7 +22,8 @@ import {
   SignalLow,
   Swords,
   Users,
-  OctagonMinus
+  OctagonMinus,
+  OctagonX
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -44,6 +45,7 @@ const selectedOwnedTerritoryId = ref<string | null>(null)
 const targetTerritoryId = ref<string | null>(null)
 const attackError = ref('')
 const attackLoading = ref(false)
+const cancelAttackLoading = ref(false)
 const lastAttackResult = ref<{ attack: any; outcome: 'win' | 'loss' | 'draw' } | null>(null)
 interface ActionLogFragment {
   text: string
@@ -513,6 +515,7 @@ const handleSocketMessage = (message: SocketMessage) => {
       sendSocketMessage(socket.value, 'game:update', {gameId})
       break
     case 'attack:started':
+      cancelAttackLoading.value = false
       if (message.attack && message.territoryId) {
         applyAttackUpdate(message.attack, message.territoryId)
         if (message.attack.attackerId === currentPlayerId.value) {
@@ -553,7 +556,36 @@ const handleSocketMessage = (message: SocketMessage) => {
         ensurePlayerConnections(message.game.players ?? [])
       }
       break
+    case 'attack:cancelled':
+      cancelAttackLoading.value = false
+      attackError.value = ''
+      if (message.territoryId) {
+        removeAttackFromState(message.territoryId)
+      }
+      if (message.game) {
+        game.value = message.game
+        ensurePlayerConnections(message.game.players ?? [])
+      }
+      if (message.attack) {
+        const attackerInfo = formatPlayerLabel(message.attack.attackerId)
+        const territoryLabel =
+          message.attack.toTerritoryName ?? message.attack.toTerritory ?? 'le territoire'
+
+        const fragments: ActionLogFragment[] = [
+          { text: attackerInfo.label, color: attackerInfo.color },
+          { text: ' annule son attaque sur ' },
+          { text: `${territoryLabel}.` }
+        ]
+
+        addActionHistoryEntry(fragments, 'info')
+
+        if (message.cancelledBy === currentPlayerId.value) {
+          lastAttackResult.value = null
+        }
+      }
+      break
     case 'attack:finished':
+      cancelAttackLoading.value = false
       if (message.attack && message.territoryId) {
         removeAttackFromState(message.territoryId)
       }
@@ -669,6 +701,7 @@ const handleSocketMessage = (message: SocketMessage) => {
       router.replace('/')
       break
     case 'error':
+      cancelAttackLoading.value = false
       if (typeof message.error === 'string') {
         socketError.value = message.error
       }
@@ -885,6 +918,37 @@ const launchAttack = async () => {
   }
 }
 
+const cancelCurrentAttack = () => {
+  const attack = currentAttack.value
+  if (!attack || cancelAttackLoading.value) {
+    return
+  }
+
+  if (!socket.value) {
+    socketError.value = 'Connexion temps réel indisponible. Annulation impossible.'
+    return
+  }
+
+  const territoryId =
+    typeof attack.territoryId === 'string' && attack.territoryId.trim() !== ''
+      ? attack.territoryId
+      : typeof attack.toTerritory === 'string'
+        ? attack.toTerritory
+        : null
+
+  if (!territoryId) {
+    return
+  }
+
+  cancelAttackLoading.value = true
+  attackError.value = ''
+
+  sendSocketMessage(socket.value, 'attack:cancel', {
+    territoryId,
+    attackId: attack.id ?? null
+  })
+}
+
 const handleTabKeyDown = (event: KeyboardEvent) => {
   if (event.key !== 'Tab') return
   event.preventDefault()
@@ -935,6 +999,8 @@ watch(
 watch(currentAttack, (attack) => {
   if (attack) {
     cancelSelection()
+  } else {
+    cancelAttackLoading.value = false
   }
 })
 
@@ -1256,13 +1322,27 @@ onBeforeUnmount(() => {
             <Card
                 class="pointer-events-auto mx-auto mb-4 w-full max-w-4xl bg-card/70 ring-1 ring-white/10 backdrop-blur">
               <CardHeader>
-                <div class="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
-                  <CardTitle class="flex items-center gap-2 font-semibold uppercase tracking-wide text-slate-200">
-                    <Swords class="size-5 text-primary"/>
-                    <span v-if="currentAttackStats">Attaque en cours</span>
-                    <span v-else-if="defendingAttackStats">Défense en direct</span>
-                    <span v-else>Commandes de jeu</span>
-                  </CardTitle>
+                <div class="flex flex-col gap-2">
+                  <div class="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
+                    <CardTitle class="flex items-center gap-2 font-semibold uppercase tracking-wide text-slate-200">
+                      <Swords class="size-5 text-primary"/>
+                      <span v-if="currentAttackStats">Attaque en cours</span>
+                      <span v-else-if="defendingAttackStats">Défense en direct</span>
+                      <span v-else>Commandes de jeu</span>
+                    </CardTitle>
+                    <Button
+                        v-if="currentAttackStats"
+                        variant="destructive"
+                        size="sm"
+                        class="pointer-events-auto"
+                        :disabled="cancelAttackLoading"
+                        @click="cancelCurrentAttack"
+                    >
+                      <OctagonX class="size-4"/>
+                      <span v-if="cancelAttackLoading">Annulation...</span>
+                      <span v-else>Annuler l'attaque</span>
+                    </Button>
+                  </div>
                   <CardDescription class="text-xs text-slate-400">
                     <span v-if="currentAttackStats">Fenêtre d'action : {{ attackWindowLabel }}</span>
                     <span v-else-if="defendingAttackStats">Mobilisez votre communauté pour tenir la ligne.</span>
