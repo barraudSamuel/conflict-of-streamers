@@ -1393,19 +1393,19 @@ onBeforeUnmount(() => {
 
       <Dialog :open="lossModalVisible" @update:open="(value) => (lossModalVisible = value)">
         <DialogContent
-            :overlay-class="'bg-slate-950/75 backdrop-blur-sm'"
-            class="w-full max-w-md space-y-4 border-red-500/30 bg-slate-950/90 p-6 sm:max-h-[85vh] sm:overflow-y-auto sm:p-8"
+            :overlay-class="'bg-card/75 backdrop-blur-sm'"
+            class="w-full max-w-md space-y-4 border-destructive/30 bg-card/90 p-6 sm:max-h-[85vh] sm:overflow-y-auto sm:p-8"
         >  
           <DialogHeader class="items-start gap-3 text-left">
             <div class="flex items-center gap-3">
-              <span class="flex size-10 items-center justify-center rounded-full bg-red-500/15 ring-1 ring-red-400/40">
-                <OctagonX class="size-5 text-red-300"/>
+              <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-destructive/15 ring-1 ring-destructive/40">
+                <OctagonX class="size-5 text-destructive"/>
               </span>
               <div class="space-y-1">
                 <DialogTitle class="text-left text-xl text-red-300">
                   Vous avez perdu
                 </DialogTitle>
-                <DialogDescription class="text-left leading-relaxed text-slate-300">
+                <DialogDescription class="text-left leading-relaxed text-muted-foreground">
                   Vous n'avez plus de territoire sous votre contrôle. Restez en spectateur ou
                   quittez la partie quand vous le souhaitez.
                 </DialogDescription>
@@ -1426,7 +1426,7 @@ onBeforeUnmount(() => {
       <Dialog :open="winnerModalVisible" @update:open="(value) => (winnerModalVisible = value)">
         <DialogContent
             :overlay-class="'bg-slate-950/80 backdrop-blur'"
-            class="w-full max-w-4xl space-y-6 border-emerald-400/30 bg-slate-950/90 p-6 sm:max-h-[85vh] sm:overflow-y-auto sm:p-10"
+            class="w-full !max-w-3xl space-y-6 border-emerald-400/30 bg-card/90 p-6 sm:max-h-[85vh] sm:overflow-y-auto sm:p-10"
         >  
           <DialogHeader class="items-start gap-4 text-left">
             <div class="flex items-start gap-4">
@@ -1444,7 +1444,7 @@ onBeforeUnmount(() => {
             </div>
           </DialogHeader>
 
-          <div class="rounded-2xl border border-white/10 bg-slate-900/70">
+          <div class="rounded-2xl border border-white/10 bg-accent/70">
             <div class="flex items-center justify-between gap-3 border-b border-white/5 px-6 py-4">
               <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-400">
                 Classement final
@@ -1461,7 +1461,7 @@ onBeforeUnmount(() => {
                     class="flex items-center justify-between rounded-xl border px-4 py-3 transition"
                     :class="entry.id === winnerPlayerId
                       ? 'border-emerald-400/60 bg-emerald-400/15 text-slate-100 shadow-lg shadow-emerald-500/10'
-                      : 'border-white/10 bg-slate-900/70 text-slate-300'"
+                      : 'border-white/10 bg-card/70 text-slate-300'"
                 >
                   <div class="flex items-center gap-4">
                     <span
