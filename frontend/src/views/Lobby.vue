@@ -64,7 +64,6 @@ const goToGameIfPlaying = (maybeGame?: any) => {
 
 const SETTINGS_DEFAULTS = {
   attackDuration: 120,
-  defenseDuration: 120,
   reinforcementDuration: 60,
   botBaseDefense: 200,
   botFrontierMultiplier: 0.2,
@@ -83,7 +82,6 @@ type SettingsPayload = Partial<Pick<GameSettings, SettingsFormKey>>
 
 const settingsForm = reactive<SettingsFormState>({
   attackDuration: '',
-  defenseDuration: '',
   reinforcementDuration: '',
   botBaseDefense: '',
   botFrontierMultiplier: '',
@@ -751,7 +749,7 @@ const handleTerritorySelect = async (territoryId: string) => {
                     </p>
                     <p class="text-sm text-slate-400">Configurez les phases en secondes</p>
                   </div>
-                  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div class="space-y-2">
                       <Label for="settings-attackDuration">
                         <span class="text-lg">⚔️</span>
@@ -760,20 +758,6 @@ const handleTerritorySelect = async (territoryId: string) => {
                       <Input
                         id="settings-attackDuration"
                         v-model="settingsForm.attackDuration"
-                        type="number"
-                        min="10"
-                        inputmode="numeric"
-                        placeholder="120"
-                      />
-                    </div>
-                    <div class="space-y-2">
-                      <Label for="settings-defenseDuration">
-                        <span class="text-lg">🛡️</span>
-                        Durée Défense
-                      </Label>
-                      <Input
-                        id="settings-defenseDuration"
-                        v-model="settingsForm.defenseDuration"
                         type="number"
                         min="10"
                         inputmode="numeric"
