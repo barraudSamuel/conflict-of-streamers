@@ -1,4 +1,8 @@
-import { Player } from '../models/Player.js';
+import { Player, PLAYER_COLORS } from '../models/Player.js';
+
+function generateRandomHexColor() {
+    return '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0').toUpperCase();
+}
 
 class PlayerManager {
     constructor() {
@@ -9,14 +13,73 @@ class PlayerManager {
 
     createPlayer(playerId, twitchUsername, color = null) {
         if (this.players.has(playerId)) {
-            return this.players.get(playerId);
+            const existing = this.players.get(playerId);
+            const normalizedUsername = twitchUsername?.toLowerCase();
+            if (existing?.twitchUsername && existing.twitchUsername.toLowerCase() !== normalizedUsername) {
+                this.twitchToPlayer.delete(existing.twitchUsername.toLowerCase());
+            }
+
+            existing.twitchUsername = twitchUsername;
+
+            if (!existing.color || this.isColorInUse(existing.color, playerId)) {
+                existing.color = this.assignColor(color || existing.color, playerId);
+            }
+
+            if (normalizedUsername) {
+                this.twitchToPlayer.set(normalizedUsername, playerId);
+            }
+
+            return existing;
         }
 
-        const player = new Player(playerId, twitchUsername, color);
+        const normalizedUsername = twitchUsername?.toLowerCase();
+        const assignedColor = this.assignColor(color);
+        const player = new Player(playerId, twitchUsername, assignedColor);
         this.players.set(playerId, player);
-        this.twitchToPlayer.set(twitchUsername.toLowerCase(), playerId);
+        if (normalizedUsername) {
+            this.twitchToPlayer.set(normalizedUsername, playerId);
+        }
 
         return player;
+    }
+
+    assignColor(preferredColor = null, playerId = null) {
+        const sanitized = typeof preferredColor === 'string' ? preferredColor.trim() : null;
+
+        if (sanitized && !this.isColorInUse(sanitized, playerId)) {
+            return sanitized;
+        }
+
+        const available = PLAYER_COLORS.filter(color => !this.isColorInUse(color, playerId));
+        if (available.length > 0) {
+            return available[Math.floor(Math.random() * available.length)];
+        }
+
+        let candidate;
+        do {
+            candidate = generateRandomHexColor();
+        } while (this.isColorInUse(candidate, playerId));
+
+        return candidate;
+    }
+
+    isColorInUse(color, ignorePlayerId = null) {
+        if (!color) {
+            return false;
+        }
+
+        const normalizedColor = color.trim();
+
+        for (let [id, player] of this.players) {
+            if (ignorePlayerId !== null && id === ignorePlayerId) {
+                continue;
+            }
+            if (player.color === normalizedColor) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     getPlayer(playerId) {
@@ -24,6 +87,9 @@ class PlayerManager {
     }
 
     getPlayerByTwitch(twitchUsername) {
+        if (!twitchUsername) {
+            return null;
+        }
         const playerId = this.twitchToPlayer.get(twitchUsername.toLowerCase());
         return playerId ? this.players.get(playerId) : null;
     }
@@ -35,7 +101,9 @@ class PlayerManager {
     deletePlayer(playerId) {
         const player = this.players.get(playerId);
         if (player) {
-            this.twitchToPlayer.delete(player.twitchUsername.toLowerCase());
+            if (player.twitchUsername) {
+                this.twitchToPlayer.delete(player.twitchUsername.toLowerCase());
+            }
             this.players.delete(playerId);
             this.onlinePlayers.delete(playerId);
         }
@@ -139,6 +207,9 @@ class PlayerManager {
 
     // Vérifier si un nom Twitch est déjà utilisé
     isTwitchUsernameTaken(twitchUsername) {
+        if (!twitchUsername) {
+            return false;
+        }
         return this.twitchToPlayer.has(twitchUsername.toLowerCase());
     }
 
@@ -183,17 +254,26 @@ class PlayerManager {
         if (!data || !data.players) return;
 
         for (let entry of data.players) {
-            const player = new Player(entry.data.id, entry.data.twitchUsername, entry.data.color);
-            player.score = entry.data.score || 0;
-            player.isReady = entry.data.isReady || false;
-            player.territories = entry.data.territories || [];
-            player.isConnected = data.onlinePlayers?.includes(entry.data.id) || false;
+            const playerData = entry?.data;
+            if (!playerData?.id || !playerData?.twitchUsername) {
+                continue;
+            }
 
-            this.players.set(entry.data.id, player);
-            this.twitchToPlayer.set(player.twitchUsername.toLowerCase(), player.id);
+            const player = this.createPlayer(playerData.id, playerData.twitchUsername, playerData.color);
+            player.score = playerData.score || 0;
+            player.isReady = playerData.isReady || false;
+            player.territories = playerData.territories || [];
 
-            if (player.isConnected) {
+            const isConnected = Array.isArray(data.onlinePlayers)
+                ? data.onlinePlayers.includes(playerData.id)
+                : Boolean(playerData.isConnected);
+
+            player.isConnected = isConnected;
+
+            if (isConnected) {
                 this.onlinePlayers.add(player.id);
+            } else {
+                this.onlinePlayers.delete(player.id);
             }
         }
     }

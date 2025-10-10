@@ -1,5 +1,6 @@
 import { Game } from '../models/Game.js';
 import { Player } from '../models/Player.js';
+import PlayerManager from './PlayerManager.js';
 
 class GameManager {
     constructor() {
@@ -9,7 +10,9 @@ class GameManager {
 
     createGame(adminId, twitchUsername, settings) {
         const game = new Game(adminId, twitchUsername, settings);
-        const admin = new Player(adminId, twitchUsername, null, true);
+        const adminRecord = PlayerManager.createPlayer(adminId, twitchUsername);
+        const adminColor = adminRecord?.color;
+        const admin = new Player(adminId, twitchUsername, adminColor, true);
         game.addPlayer(admin);
 
         this.games.set(game.id, game);
@@ -43,7 +46,9 @@ class GameManager {
             throw new Error('Player already in another game');
         }
 
-        const player = new Player(playerId, twitchUsername, null, false);
+        const playerRecord = PlayerManager.createPlayer(playerId, twitchUsername);
+        const playerColor = playerRecord?.color;
+        const player = new Player(playerId, twitchUsername, playerColor, false);
         game.addPlayer(player);
         this.playerToGame.set(playerId, game.id);
 
