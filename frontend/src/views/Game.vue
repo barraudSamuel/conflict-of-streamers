@@ -756,7 +756,7 @@ const handleSocketMessage = (message: SocketMessage) => {
           ]
         : [
             { text: chatUser, color: '#cbd5f5' },
-            { text: ` pousse l'attaque sur ${territoryLabel}!` }
+            { text: ` attaque sur ${territoryLabel}!` }
           ]
 
       addActionHistoryEntry(fragments, isDefense ? 'info' : 'success')
