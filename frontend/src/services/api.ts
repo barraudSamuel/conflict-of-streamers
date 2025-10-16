@@ -167,6 +167,12 @@ interface ValidateAttackResponse {
   error?: string;
 }
 
+interface ValidateReinforcementResponse {
+  success: boolean;
+  canReinforce: boolean;
+  error?: string;
+}
+
 export async function leaveGame(gameId: string, playerId: string): Promise<BasicSuccessResponse> {
   const response = await fetch(`${API_URL}/api/game/${gameId}/leave`, {
     method: 'POST',
@@ -207,6 +213,30 @@ export async function validateAttack(
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Attack validation failed');
+  }
+
+  return response.json();
+}
+
+export async function validateReinforcement(
+  gameId: string,
+  playerId: string,
+  territoryId: string
+): Promise<ValidateReinforcementResponse> {
+  const response = await fetch(`${API_URL}/api/game/${gameId}/reinforcement`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      playerId,
+      territoryId
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to validate reinforcement');
   }
 
   return response.json();

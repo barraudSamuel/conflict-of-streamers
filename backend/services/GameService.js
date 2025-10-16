@@ -174,6 +174,7 @@ class GameService {
         const territories = Array.from(game.territories.values()).map(t => ({
             ...t.toJSON ? t.toJSON() : t,
             isUnderAttack: game.isTerritoryUnderAttack(t.id),
+            isReinforced: game.isTerritoryUnderReinforcement(t.id) || t.isReinforced,
             neighbors: MapService.getNeighbors(t.id).map(n => n.id)
         }));
 
@@ -182,6 +183,7 @@ class GameService {
             players,
             territories,
             activeAttacks: game.getActiveAttacks().map(a => a.toJSON()),
+            activeReinforcements: game.getActiveReinforcements().map(r => r.toJSON()),
             leaderboard: this.getGameLeaderboard(game)
         };
     }

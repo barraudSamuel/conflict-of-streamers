@@ -30,6 +30,13 @@ interface ActiveAttack {
   toTerritory?: string | null
 }
 
+interface ActiveReinforcement {
+  id?: string | null
+  territoryId?: string | null
+  territoryName?: string | null
+  initiatorId?: string | null
+}
+
 const props = defineProps<{
   territories: LobbyTerritory[]
   players: LobbyPlayer[]
@@ -37,6 +44,7 @@ const props = defineProps<{
   disableInteraction?: boolean
   appearance?: 'lobby' | 'game'
   activeAttacks?: ActiveAttack[]
+  activeReinforcements?: ActiveReinforcement[]
 }>()
 
 const emit = defineEmits<{
@@ -234,6 +242,8 @@ const territoryState = computed(() => {
       ownerColor: string | null
       defensePower?: number | null
       isBot: boolean
+      isReinforced: boolean
+      reinforcementBonus: number
     }
   >()
 
@@ -251,7 +261,11 @@ const territoryState = computed(() => {
       ownerName,
       ownerColor,
       defensePower: territory.defensePower ?? null,
-      isBot
+      isBot,
+      isReinforced: Boolean(territory.isReinforced),
+      reinforcementBonus: Number.isFinite(territory.reinforcementBonus)
+        ? Number(territory.reinforcementBonus)
+        : 0
     }
 
     const keys = new Set<string>()
@@ -564,15 +578,35 @@ const computeFillColor = (feature: DeckFeature) => {
     return DEFAULT_AVAILABLE_COLOR
   }
 
+  const baseColor = info.ownerColor ? hexToRgba(info.ownerColor, 210) : DEFAULT_OCCUPIED_COLOR
+
   if (info.ownerId === props.currentPlayerId) {
-    return info.ownerColor ? hexToRgba(info.ownerColor, 235) : CURRENT_PLAYER_FALLBACK_COLOR
+    const color = info.ownerColor ? hexToRgba(info.ownerColor, info.isReinforced ? 255 : 235) : CURRENT_PLAYER_FALLBACK_COLOR
+    if (info.isReinforced && Array.isArray(color)) {
+      return [
+        Math.min(255, color[0] + 12),
+        Math.min(255, color[1] + 18),
+        Math.min(255, color[2] + 18),
+        color[3]
+      ]
+    }
+    return color
   }
 
   if (info.isBot) {
     return hexToRgba(info.ownerColor, 210)
   }
 
-  return hexToRgba(info.ownerColor, 210)
+  if (info.isReinforced) {
+    return [
+      Math.min(255, baseColor[0]),
+      Math.min(255, baseColor[1] + 20),
+      Math.min(255, baseColor[2] + 35),
+      baseColor[3]
+    ]
+  }
+
+  return baseColor
 }
 
 const computeLineColor = (feature: DeckFeature) => {
@@ -604,6 +638,10 @@ const tooltipFn = ({ object }: PickingInfo<DeckFeature>) => {
 
   if (showDefenseOverlay.value && typeof info?.defensePower === 'number' && info.defensePower > 0) {
     lines.push(`Défense: ${info.defensePower}`)
+  }
+
+  if (info?.isReinforced && typeof info.reinforcementBonus === 'number' && info.reinforcementBonus > 0) {
+    lines.push(`Renfort actif: ${info.reinforcementBonus}`)
   }
 
   return {

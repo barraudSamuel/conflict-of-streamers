@@ -85,6 +85,7 @@ export class Game {
         this.players = [];
         this.territories = new Map();
         this.activeAttacks = new Map(); // territoryId -> Attack (plusieurs attaques simultanées)
+        this.activeReinforcements = new Map(); // territoryId -> Reinforcement
         this.createdAt = Date.now();
         this.startedAt = null;
         this.finishedAt = null;
@@ -224,6 +225,7 @@ export class Game {
         this.status = 'finished';
         this.finishedAt = Date.now();
         this.activeAttacks.clear();
+        this.activeReinforcements.clear();
     }
 
     updateSettings(settings = {}) {
@@ -245,6 +247,10 @@ export class Game {
         return this.activeAttacks.has(territoryId);
     }
 
+    isTerritoryUnderReinforcement(territoryId) {
+        return this.activeReinforcements.has(territoryId);
+    }
+
     // Ajouter une attaque
     addAttack(territoryId, attack) {
         const territory = this.territories.get(territoryId);
@@ -263,9 +269,21 @@ export class Game {
         this.activeAttacks.delete(territoryId);
     }
 
+    addReinforcement(territoryId, reinforcement) {
+        this.activeReinforcements.set(territoryId, reinforcement);
+    }
+
+    removeReinforcement(territoryId) {
+        this.activeReinforcements.delete(territoryId);
+    }
+
     // Obtenir toutes les attaques actives
     getActiveAttacks() {
         return Array.from(this.activeAttacks.values());
+    }
+
+    getActiveReinforcements() {
+        return Array.from(this.activeReinforcements.values());
     }
 
     initializeTerritories() {
@@ -282,6 +300,8 @@ export class Game {
                 attackPower: 0,
                 defensePower: 0,
                 isUnderAttack: false,
+                isReinforced: false,
+                reinforcementBonus: 0,
                 conqueredAt: null,
                 history: []
             });
@@ -330,6 +350,10 @@ export class Game {
             activeAttacks: Array.from(this.activeAttacks.entries()).map(([territoryId, attack]) => ({
                 territoryId,
                 ...attack.toJSON()
+            })),
+            activeReinforcements: Array.from(this.activeReinforcements.entries()).map(([territoryId, reinforcement]) => ({
+                territoryId,
+                ...reinforcement.toJSON()
             })),
             createdAt: this.createdAt,
             startedAt: this.startedAt,

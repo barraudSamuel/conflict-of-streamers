@@ -20,7 +20,7 @@ import {Kbd} from '@/components/ui/kbd'
 import {ScrollArea} from '@/components/ui/scroll-area'
 import LobbyDeckMap from '@/components/maps/LobbyDeckMap.vue'
 import {createGameSocket, sendSocketMessage, type SocketMessage} from '@/services/socket'
-import {getGame, leaveGame as leaveGameRequest, validateAttack} from '@/services/api'
+import {getGame, leaveGame as leaveGameRequest, validateAttack, validateReinforcement} from '@/services/api'
 import {clearPlayerContext, loadPlayerContext, type PlayerContext} from '@/lib/playerStorage'
 import {
   LogOut,
@@ -31,6 +31,7 @@ import {
   Users,
   OctagonMinus,
   OctagonX,
+  Shield,
   X,
   Trophy
 } from 'lucide-vue-next'
@@ -69,9 +70,13 @@ const hasAnnouncedWinner = ref(false)
 const hadMultipleHumanPlayers = ref(false)
 const selectedOwnedTerritoryId = ref<string | null>(null)
 const targetTerritoryId = ref<string | null>(null)
+const lastClickedTerritoryId = ref<string | null>(null)
 const attackError = ref('')
 const attackLoading = ref(false)
 const cancelAttackLoading = ref(false)
+const reinforcementError = ref('')
+const reinforcementLoading = ref(false)
+const cancelReinforcementLoading = ref(false)
 const lastAttackResult = ref<{ attack: any; outcome: 'win' | 'loss' | 'draw' } | null>(null)
 interface ActionLogFragment {
   text: string
@@ -332,22 +337,12 @@ const BOT_LEGEND_COLOR = '#64748b'
 const selectedOwnedTerritory = computed(() => getTerritory(selectedOwnedTerritoryId.value))
 const targetTerritory = computed(() => getTerritory(targetTerritoryId.value))
 
-const selectedOwnedNeighbors = computed<any[]>(() => {
-  const selected = selectedOwnedTerritory.value
-  if (!selected || !Array.isArray(selected.neighbors)) return []
-  return selected.neighbors
-    .map((id: string) => getTerritory(id))
-    .filter((item: any): item is any => item !== null)
-})
-
-const potentialTargets = computed(() =>
-  selectedOwnedNeighbors.value.filter(
-    (territory) => territory.ownerId !== currentPlayerId.value
-  )
-)
-
 const activeAttacks = computed<any[]>(() =>
   Array.isArray(game.value?.activeAttacks) ? game.value.activeAttacks : []
+)
+
+const activeReinforcements = computed<any[]>(() =>
+  Array.isArray(game.value?.activeReinforcements) ? game.value.activeReinforcements : []
 )
 
 const currentAttack = computed<any | null>(() =>
@@ -357,6 +352,35 @@ const currentAttack = computed<any | null>(() =>
 const defendingAttack = computed<any | null>(() =>
   activeAttacks.value.find((attack) => attack.defenderId === currentPlayerId.value) ?? null
 )
+
+const currentReinforcement = computed<any | null>(() =>
+  activeReinforcements.value.find((reinforcement) => reinforcement.initiatorId === currentPlayerId.value) ?? null
+)
+
+const selectedReinforcement = computed<any | null>(() => {
+  const territoryId = selectedOwnedTerritoryId.value
+  if (!territoryId) return null
+  return activeReinforcements.value.find((reinforcement) => reinforcement.territoryId === territoryId) ?? null
+})
+
+const lastClickedTerritory = computed(() => getTerritory(lastClickedTerritoryId.value))
+const lastClickedIsOwned = computed(() => lastClickedTerritory.value?.ownerId === currentPlayerId.value)
+const lastClickedIsTarget = computed(() => {
+  const target = targetTerritory.value
+  return !!target && target.id === lastClickedTerritory.value?.id
+})
+
+const showAttackActions = computed(() => {
+  const target = targetTerritory.value
+  if (!target) return false
+  return lastClickedTerritory.value?.id === target.id
+})
+const showReinforcementActions = computed(() => {
+  if (!lastClickedIsOwned.value) return false
+  const owned = selectedOwnedTerritory.value
+  if (!owned) return false
+  return owned.id === lastClickedTerritory.value?.id
+})
 
 const attackSettings = computed(() => game.value?.settings ?? {})
 const attackDurationSeconds = computed(
@@ -375,12 +399,26 @@ const defenseCommandLabel = computed(() => {
   return `!defend ${name}`
 })
 
+const reinforcementDurationSeconds = computed(
+  () => Number(attackSettings.value?.reinforcementDuration) || 0
+)
+
+const reinforcementCommandLabel = computed(() => {
+  const name =
+    selectedOwnedTerritory.value?.name ??
+    currentReinforcement.value?.territoryName ??
+    selectedReinforcement.value?.territoryName
+  if (!name || typeof name !== 'string') return ''
+  return `!renfort ${name}`
+})
+
 const canLaunchAttack = computed(() => {
   if (!playerContext.value?.playerId) return false
   if (currentAttack.value) return false
   const origin = selectedOwnedTerritory.value
   const target = targetTerritory.value
   if (!origin || !target) return false
+  if (selectedReinforcement.value) return false
   if (target.ownerId === currentPlayerId.value) return false
   if (target.isUnderAttack) return false
 
@@ -389,6 +427,23 @@ const canLaunchAttack = computed(() => {
 })
 
 const attackCTAEnabled = computed(() => canLaunchAttack.value && !attackLoading.value)
+
+const canLaunchReinforcement = computed(() => {
+  if (!playerContext.value?.playerId) return false
+  const territory = selectedOwnedTerritory.value
+  if (!territory) return false
+  if (territory.ownerId !== currentPlayerId.value) return false
+  if (territory.isUnderAttack) return false
+  if (selectedReinforcement.value) return false
+  if (currentReinforcement.value && currentReinforcement.value.territoryId !== territory.id) {
+    return false
+  }
+  return true
+})
+
+const reinforcementCTAEnabled = computed(
+  () => canLaunchReinforcement.value && !reinforcementLoading.value
+)
 
 const currentAttackStats = computed(() => {
   const attack = currentAttack.value
@@ -409,6 +464,20 @@ const currentAttackStats = computed(() => {
     attackPoints: Number(attack.attackPoints) || 0,
     defensePoints: Number(attack.defensePoints) || 0,
     baseDefense: Number(attack.baseDefense) || 0
+  }
+})
+
+const currentReinforcementStats = computed(() => {
+  const reinforcement = selectedReinforcement.value ?? currentReinforcement.value
+  if (!reinforcement) return null
+
+  return {
+    reinforcement,
+    remaining: Number(reinforcement.remainingTime) || 0,
+    messages: Number(reinforcement.messageCount) || 0,
+    participants: Number(reinforcement.participantCount) || 0,
+    accumulatedBonus: Number(reinforcement.accumulatedBonus) || 0,
+    baseDefense: Number(reinforcement.baseDefense) || 0
   }
 })
 
@@ -561,6 +630,110 @@ const removeAttackFromState = (territoryId: string) => {
   }
 }
 
+const applyReinforcementUpdate = (reinforcementPayload: any, territoryId: string) => {
+  if (!game.value) return
+
+  const current = game.value
+  const incoming = { territoryId, ...reinforcementPayload }
+
+  const activeReinforcements = Array.isArray(current.activeReinforcements)
+    ? [...current.activeReinforcements]
+    : []
+
+  const index = activeReinforcements.findIndex((entry: any) => entry.territoryId === territoryId)
+
+  if (index >= 0) {
+    activeReinforcements[index] = { ...activeReinforcements[index], ...incoming }
+  } else {
+    activeReinforcements.push(incoming)
+  }
+
+  const territories = Array.isArray(current.territories)
+    ? current.territories.map((territory: any) => {
+      if (territory.id !== territoryId) return territory
+      const rawBonus =
+        typeof incoming.accumulatedBonus === 'number'
+          ? incoming.accumulatedBonus
+          : typeof incoming.baseDefense === 'number'
+            ? incoming.baseDefense
+            : typeof territory.defensePower === 'number'
+              ? territory.defensePower
+              : 0
+      const bonus = Number.isFinite(Number(rawBonus)) ? Number(rawBonus) : 0
+
+      return {
+        ...territory,
+        isReinforced: true,
+        reinforcementBonus: bonus,
+        defensePower: bonus
+      }
+    })
+    : current.territories
+
+  game.value = {
+    ...current,
+    activeReinforcements,
+    territories
+  }
+}
+
+const removeReinforcementFromState = (
+  territoryId: string,
+  options: { keepBuff?: boolean; reinforcement?: any } = {}
+) => {
+  if (!game.value) return
+
+  const current = game.value
+  const { keepBuff = false, reinforcement = null } = options
+
+  const activeReinforcements = Array.isArray(current.activeReinforcements)
+    ? current.activeReinforcements.filter((entry: any) => entry.territoryId !== territoryId)
+    : current.activeReinforcements
+
+  const territories = Array.isArray(current.territories)
+    ? current.territories.map((territory: any) => {
+      if (territory.id !== territoryId) return territory
+
+      const baseDefense =
+        typeof reinforcement?.baseDefense === 'number'
+          ? reinforcement.baseDefense
+          : typeof territory.baseDefense === 'number'
+            ? territory.baseDefense
+            : typeof territory.defensePower === 'number'
+              ? territory.defensePower
+              : 0
+      const baseDefenseValue = Number.isFinite(Number(baseDefense)) ? Number(baseDefense) : 0
+
+      if (keepBuff && reinforcement) {
+        const finalBonus =
+          typeof reinforcement.accumulatedBonus === 'number'
+            ? reinforcement.accumulatedBonus
+            : baseDefenseValue
+        const finalBonusValue = Number.isFinite(Number(finalBonus)) ? Number(finalBonus) : baseDefenseValue
+        return {
+          ...territory,
+          isReinforced: true,
+          reinforcementBonus: finalBonusValue,
+          defensePower: finalBonusValue
+        }
+      }
+
+      return {
+        ...territory,
+        isReinforced: false,
+        reinforcementBonus: baseDefenseValue,
+        defensePower: baseDefenseValue
+      }
+    })
+    : current.territories
+
+  game.value = {
+    ...current,
+    activeReinforcements,
+    territories
+  }
+}
+
 const scheduleReconnect = () => {
   if (manualDisconnect || reconnectTimer !== null) return
 
@@ -618,6 +791,81 @@ const handleSocketMessage = (message: SocketMessage) => {
       if (message.game) {
         game.value = message.game
         ensurePlayerConnections(message.game.players ?? [])
+      }
+      break
+    case 'reinforcement:started':
+      reinforcementLoading.value = false
+      cancelReinforcementLoading.value = false
+      reinforcementError.value = ''
+      if (message.reinforcement && message.territoryId) {
+        applyReinforcementUpdate(message.reinforcement, message.territoryId)
+
+        const territoryLabel =
+          message.reinforcement.territoryName ?? message.reinforcement.territoryId ?? 'un territoire'
+        const fragments: ActionLogFragment[] = [
+          { text: 'Renfort lancé sur ' },
+          { text: territoryLabel.toString(), color: DEFAULT_PLAYER_LOG_COLOR }
+        ]
+        addActionHistoryEntry(fragments, 'info')
+      }
+      if (message.game) {
+        game.value = message.game
+        ensurePlayerConnections(message.game.players ?? [])
+      }
+      break
+    case 'reinforcement:update':
+      if (message.reinforcement && message.territoryId) {
+        applyReinforcementUpdate(message.reinforcement, message.territoryId)
+      }
+      if (message.game) {
+        game.value = message.game
+        ensurePlayerConnections(message.game.players ?? [])
+      }
+      break
+    case 'reinforcement:finished':
+      cancelReinforcementLoading.value = false
+      reinforcementLoading.value = false
+      if (message.territoryId) {
+        removeReinforcementFromState(message.territoryId, {
+          keepBuff: true,
+          reinforcement: message.reinforcement ?? null
+        })
+      }
+      if (message.game) {
+        game.value = message.game
+        ensurePlayerConnections(message.game.players ?? [])
+      }
+      if (message.reinforcement) {
+        const territoryLabel =
+          message.reinforcement.territoryName ?? message.reinforcement.territoryId ?? 'le territoire'
+        const fragments: ActionLogFragment[] = [
+          { text: 'Renfort terminé sur ' },
+          { text: territoryLabel.toString(), color: DEFAULT_PLAYER_LOG_COLOR }
+        ]
+        addActionHistoryEntry(fragments, 'success')
+      }
+      break
+    case 'reinforcement:cancelled':
+      cancelReinforcementLoading.value = false
+      reinforcementLoading.value = false
+      if (message.territoryId) {
+        removeReinforcementFromState(message.territoryId, {
+          keepBuff: false,
+          reinforcement: message.reinforcement ?? null
+        })
+      }
+      if (message.game) {
+        game.value = message.game
+        ensurePlayerConnections(message.game.players ?? [])
+      }
+      if (message.reinforcement) {
+        const territoryLabel =
+          message.reinforcement.territoryName ?? message.reinforcement.territoryId ?? 'le territoire'
+        const fragments: ActionLogFragment[] = [
+          { text: 'Renfort annulé sur ' },
+          { text: territoryLabel.toString(), color: DEFAULT_PLAYER_LOG_COLOR }
+        ]
+        addActionHistoryEntry(fragments, 'info')
       }
       break
     case 'attack:update':
@@ -743,6 +991,9 @@ const handleSocketMessage = (message: SocketMessage) => {
       if (message.attack && message.territoryId) {
         applyAttackUpdate(message.attack, message.territoryId)
       }
+      if (message.reinforcement && message.territoryId) {
+        applyReinforcementUpdate(message.reinforcement, message.territoryId)
+      }
       break
     case 'player:kick-notice':
       manualDisconnect = true
@@ -757,6 +1008,8 @@ const handleSocketMessage = (message: SocketMessage) => {
       break
     case 'error':
       cancelAttackLoading.value = false
+      reinforcementLoading.value = false
+      cancelReinforcementLoading.value = false
       if (typeof message.error === 'string') {
         socketError.value = message.error
       }
@@ -845,7 +1098,9 @@ const handleLeaveGame = async () => {
 const cancelSelection = () => {
   selectedOwnedTerritoryId.value = null
   targetTerritoryId.value = null
+  lastClickedTerritoryId.value = null
   attackError.value = ''
+  reinforcementError.value = ''
 }
 
 const captureFinalRanking = (): RankingEntry[] =>
@@ -878,9 +1133,11 @@ void closeWinnerModal
 
 const handleTerritorySelect = (territoryId: string) => {
   attackError.value = ''
+  reinforcementError.value = ''
 
   const territory = getTerritory(territoryId)
   if (!territory) return
+  lastClickedTerritoryId.value = territoryId
 
   if (territory.ownerId === currentPlayerId.value) {
     selectedOwnedTerritoryId.value = territoryId
@@ -923,10 +1180,6 @@ const handleTerritorySelect = (territoryId: string) => {
   }
 
   targetTerritoryId.value = territoryId
-}
-
-const selectTargetFromList = (territoryId: string) => {
-  handleTerritorySelect(territoryId)
 }
 
 const getPlayerUsername = (playerId?: string | null) => {
@@ -1029,6 +1282,57 @@ const cancelCurrentAttack = () => {
   sendSocketMessage(socket.value, 'attack:cancel', {
     territoryId,
     attackId: attack.id ?? null
+  })
+}
+
+const launchReinforcement = async () => {
+  if (!canLaunchReinforcement.value || !playerContext.value?.playerId) {
+    return
+  }
+
+  const territoryId = selectedOwnedTerritoryId.value
+  if (!territoryId) return
+
+  reinforcementError.value = ''
+  reinforcementLoading.value = true
+
+  try {
+    await validateReinforcement(gameId, playerContext.value.playerId, territoryId)
+    sendSocketMessage(socket.value, 'reinforcement:start', {
+      territoryId
+    })
+  } catch (err) {
+    reinforcementError.value =
+      err instanceof Error
+        ? err.message
+        : 'Impossible de lancer le renfort pour le moment.'
+  } finally {
+    reinforcementLoading.value = false
+  }
+}
+
+const cancelCurrentReinforcement = () => {
+  const reinforcement = currentReinforcement.value ?? selectedReinforcement.value
+  if (!reinforcement || cancelReinforcementLoading.value) {
+    return
+  }
+
+  if (!socket.value) {
+    socketError.value = 'Connexion temps réel indisponible. Annulation impossible.'
+    return
+  }
+
+  const territoryId = typeof reinforcement.territoryId === 'string' ? reinforcement.territoryId : null
+  if (!territoryId) {
+    return
+  }
+
+  cancelReinforcementLoading.value = true
+  reinforcementError.value = ''
+
+  sendSocketMessage(socket.value, 'reinforcement:cancel', {
+    territoryId,
+    reinforcementId: reinforcement.id ?? null
   })
 }
 
@@ -1152,6 +1456,12 @@ watch(currentAttack, (attack) => {
   }
 })
 
+watch(currentReinforcement, (reinforcement) => {
+  if (!reinforcement) {
+    cancelReinforcementLoading.value = false
+  }
+})
+
 const formatDuration = (totalSeconds: number) => {
   const safe = Math.max(0, Math.floor(Number(totalSeconds) || 0))
   const minutes = Math.floor(safe / 60)
@@ -1160,6 +1470,7 @@ const formatDuration = (totalSeconds: number) => {
 }
 
 const attackWindowLabel = computed(() => formatDuration(attackDurationSeconds.value))
+const reinforcementWindowLabel = computed(() => formatDuration(reinforcementDurationSeconds.value))
 
 onMounted(async () => {
   window.addEventListener('keydown', handleTabKeyDown)
@@ -1234,6 +1545,7 @@ onBeforeUnmount(() => {
             :players="game.players ?? []"
             :current-player-id="currentPlayerId"
             :active-attacks="activeAttacks"
+            :active-reinforcements="activeReinforcements"
             :disable-interaction="false"
             @select="handleTerritorySelect"
         />
@@ -1636,268 +1948,512 @@ onBeforeUnmount(() => {
                   </CardDescription>
                 </div>
               </CardHeader>
-              <CardContent class="space-y-4">
-                <div v-if="currentAttackStats" class="space-y-4">
-                  <div class="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p class="text-xs uppercase tracking-wide text-slate-500">Cible</p>
-                      <p class="text-lg font-semibold text-slate-100">
-                        {{ currentAttack?.toTerritoryName ?? currentAttack?.toTerritory }}
-                      </p>
-                      <p class="text-xs text-slate-500" v-if="currentAttack?.defenderId">
-                        Défenseur :
-                        <span class="font-medium text-slate-200">
-                          {{ getPlayerUsername(currentAttack?.defenderId) ?? 'Inconnu' }}
-                        </span>
-                      </p>
-                    </div>
-                    <div class="text-right">
-                      <p class="text-xs uppercase tracking-wide text-slate-500">Temps restant</p>
-                      <p class="text-2xl font-semibold text-primary">
-                        {{ formatDuration(currentAttackStats.remaining) }}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div class="space-y-3 rounded-xl border border-white/10 bg-accent/60 p-4">
-                    <p class="text-2xl font-medium text-emerald-300">
-                      {{ currentAttackEncouragement }}
-                    </p>
-                    <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
-                      <span>Messages
-                        <span class="font-semibold text-slate-100">{{ currentAttackStats.messages }}</span>
-                      </span>
-                      <span>Participants
-                        <span class="font-semibold text-slate-100">{{ currentAttackStats.participants }}</span>
-                      </span>
-                      <span>Puissance
-                        <span class="font-semibold text-slate-100">{{ currentAttackStats.attackPoints }}</span>
-                      </span>
-                      <span>Défense estimée
-                        <span class="font-semibold text-slate-100">{{ currentAttackStats.defensePoints }}</span>
-                      </span>
-                    </div>
-                    <div class="space-y-2">
-                      <div class="relative h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                        <div
-                            class="absolute inset-y-0 left-0 bg-primary transition-all duration-500"
-                            :style="{ width: `${currentAttackBalance.attackPercent}%` }"
-                        ></div>
-                        <div
-                            class="absolute inset-y-0 right-0 bg-amber-400 transition-all duration-500"
-                            :style="{ width: `${currentAttackBalance.defensePercent}%` }"
-                        ></div>
-                        <div class="absolute inset-y-0 left-1/2 w-1 -translate-x-1/2 transform bg-white/60"></div>
-                      </div>
-                      <div class="flex items-center justify-between text-[11px] text-slate-400">
-                        <span
-                            class="flex items-center gap-2"
-                            :class="currentAttackBalance.attackPercent > 50 ? 'font-semibold text-slate-200' : ''"
-                        >
-                          <span class="inline-block h-2 w-2 rounded-full bg-primary"></span>
-                          Attaque {{ currentAttackBalance.attackPercent }}%
-                        </span>
-                        <span
-                            class="flex items-center gap-2"
-                            :class="currentAttackBalance.defensePercent > 50 ? 'font-semibold text-slate-200' : ''"
-                        >
-                          <span class="inline-block h-2 w-2 rounded-full bg-amber-400"></span>
-                          Défense {{ currentAttackBalance.defensePercent }}%
-                        </span>
-                      </div>
-                    </div>
-                    <p class="text-xs text-slate-500">
-                      Base de défense : {{ currentAttackStats.baseDefense }}
-                    </p>
-                  </div>
-                </div>
-
-                <div v-else-if="defendingAttackStats" class="space-y-4">
-                  <div class="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p class="text-xs uppercase tracking-wide text-slate-500">Territoire à défendre</p>
-                      <p class="text-lg font-semibold text-slate-100">
-                        {{ defendingAttack?.toTerritoryName ?? defendingAttack?.toTerritory }}
-                      </p>
-                      <p class="text-xs text-slate-500">
-                        Attaquant :
-                        <span class="font-medium text-slate-200">
-                          {{ getPlayerUsername(defendingAttack?.attackerId) ?? 'Inconnu' }}
-                        </span>
-                      </p>
-                    </div>
-                    <div class="text-right">
-                      <p class="text-xs uppercase tracking-wide text-slate-500">Temps restant</p>
-                      <p class="text-2xl font-semibold text-amber-300">
-                        {{ formatDuration(defendingAttackStats.remaining) }}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div class="space-y-3 rounded-xl border border-white/10 bg-accent/60 p-4">
-                    <p class="text-2xl font-medium text-amber-200">
-                      {{ defendingEncouragement }}
-                    </p>
-                    <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
-                      <span>Messages
-                        <span class="font-semibold text-slate-100">{{ defendingAttackStats.messages }}</span>
-                      </span>
-                      <span>Défense
-                        <span class="font-semibold text-slate-100">{{ defendingAttackStats.defensePoints }}</span>
-                      </span>
-                      <span>Puissance adverse
-                        <span class="font-semibold text-slate-100">{{ defendingAttackStats.attackPoints }}</span>
-                      </span>
-                    </div>
-                    <div class="space-y-2">
-                      <div class="relative h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                        <div
-                            class="absolute inset-y-0 left-0 bg-primary/80 transition-all duration-500"
-                            :style="{ width: `${defendingAttackBalance.attackPercent}%` }"
-                        ></div>
-                        <div
-                            class="absolute inset-y-0 right-0 bg-amber-400 transition-all duration-500"
-                            :style="{ width: `${defendingAttackBalance.defensePercent}%` }"
-                        ></div>
-                        <div class="absolute inset-y-0 left-1/2 w-1 -translate-x-1/2 transform bg-white/60"></div>
-                      </div>
-                      <div class="flex items-center justify-between text-[11px] text-slate-400">
-                        <span
-                            class="flex items-center gap-2"
-                            :class="defendingAttackBalance.attackPercent > 50 ? 'font-semibold text-slate-200' : ''"
-                        >
-                          <span class="inline-block h-2 w-2 rounded-full bg-primary/80"></span>
-                          Attaque {{ defendingAttackBalance.attackPercent }}%
-                        </span>
-                        <span
-                            class="flex items-center gap-2"
-                            :class="defendingAttackBalance.defensePercent > 50 ? 'font-semibold text-slate-200' : ''"
-                        >
-                          <span class="inline-block h-2 w-2 rounded-full bg-amber-400"></span>
-                          Défense {{ defendingAttackBalance.defensePercent }}%
-                        </span>
-                      </div>
-                    </div>
-                    <p class="text-xs text-slate-500">
-                      Base de défense : {{ defendingAttackStats.baseDefense }}
-                    </p>
-                  </div>
-                </div>
-
-                <div v-else class="space-y-4">
-                  <div v-if="lastAttackResult" class="rounded-lg border border-white/10 bg-slate-900/50 p-4">
-                    <p
-                        class="text-sm font-semibold"
-                        :class="{
-                          'text-emerald-300': lastAttackResult.outcome === 'win',
-                          'text-red-300': lastAttackResult.outcome === 'loss',
-                          'text-slate-300': lastAttackResult.outcome === 'draw'
-                        }"
-                    >
-                      <template v-if="lastAttackResult.outcome === 'win'">Victoire !</template>
-                      <template v-else-if="lastAttackResult.outcome === 'loss'">Défaite…</template>
-                      <template v-else>Égalité</template>
-                      <span class="ml-2 text-xs text-slate-400">
-                        {{ lastAttackResult.attack.attackPoints }} vs {{ lastAttackResult.attack.defensePoints }}
-                      </span>
-                    </p>
-                  </div>
-
-                  <div class="space-y-3 rounded-xl border border-white/10 bg-accent/60 p-4">
-                    <div class="flex flex-wrap items-center justify-between gap-4 text-sm text-slate-300">
-                      <div>
-                        <p class="text-xs uppercase tracking-wide text-slate-500">Territoire source</p>
-                        <p class="text-sm font-semibold text-slate-100">
-                          {{ selectedOwnedTerritory?.name ?? 'Non sélectionné' }}
-                        </p>
-                      </div>
+              <CardContent class="space-y-6">
+                <template v-if="currentAttackStats">
+                  <div class="space-y-4">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
                       <div>
                         <p class="text-xs uppercase tracking-wide text-slate-500">Cible</p>
-                        <p class="text-sm font-semibold text-slate-100">
-                          {{ targetTerritory?.name ?? 'Non sélectionnée' }}
+                        <p class="text-lg font-semibold text-slate-100">
+                          {{ currentAttack?.toTerritoryName ?? currentAttack?.toTerritory }}
+                        </p>
+                        <p class="text-xs text-slate-500" v-if="currentAttack?.defenderId">
+                          Défenseur :
+                          <span class="font-medium text-slate-200">
+                            {{ getPlayerUsername(currentAttack?.defenderId) ?? 'Inconnu' }}
+                          </span>
                         </p>
                       </div>
                       <div class="text-right">
-                        <p class="text-xs uppercase tracking-wide text-slate-500">Fenêtre d'action</p>
-                        <p class="text-sm font-semibold text-slate-100">{{ attackWindowLabel }}</p>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Temps restant</p>
+                        <p class="text-2xl font-semibold text-primary">
+                          {{ formatDuration(currentAttackStats.remaining) }}
+                        </p>
                       </div>
                     </div>
 
-                    <p v-if="attackError" class="text-xs font-medium text-red-300">{{ attackError }}</p>
-
-                    <div v-if="selectedOwnedTerritory && !targetTerritory" class="space-y-2">
-                      <p class="text-xs text-slate-400">
-                        Choisissez une cible limitrophe à partir de {{ selectedOwnedTerritory.name }} :
+                    <div class="space-y-3 rounded-xl border border-white/10 bg-accent/60 p-4">
+                      <p class="text-2xl font-medium text-emerald-300">
+                        {{ currentAttackEncouragement }}
                       </p>
-                      <div class="flex flex-wrap gap-2">
-                        <Button
-                            v-for="territory in potentialTargets"
-                            :key="territory.id"
-                            size="sm"
-                            variant="secondary"
-                            class="pointer-events-auto"
-                            @click="selectTargetFromList(territory.id)"
-                        >
-                          {{ territory.name }}
-                          <span class="ml-2 text-xs text-slate-400" v-if="territory.defensePower">
-                            🛡 {{ territory.defensePower }}
+                      <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+                        <span>Messages
+                          <span class="font-semibold text-slate-100">{{ currentAttackStats.messages }}</span>
+                        </span>
+                        <span>Participants
+                          <span class="font-semibold text-slate-100">{{ currentAttackStats.participants }}</span>
+                        </span>
+                        <span>Puissance
+                          <span class="font-semibold text-slate-100">{{ currentAttackStats.attackPoints }}</span>
+                        </span>
+                        <span>Défense estimée
+                          <span class="font-semibold text-slate-100">{{ currentAttackStats.defensePoints }}</span>
+                        </span>
+                      </div>
+                      <div class="space-y-2">
+                        <div class="relative h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                          <div
+                              class="absolute inset-y-0 left-0 bg-primary transition-all duration-500"
+                              :style="{ width: `${currentAttackBalance.attackPercent}%` }"
+                          ></div>
+                          <div
+                              class="absolute inset-y-0 right-0 bg-amber-400 transition-all duration-500"
+                              :style="{ width: `${currentAttackBalance.defensePercent}%` }"
+                          ></div>
+                          <div class="absolute inset-y-0 left-1/2 w-1 -translate-x-1/2 transform bg-white/60"></div>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] text-slate-400">
+                          <span
+                              class="flex items-center gap-2"
+                              :class="currentAttackBalance.attackPercent > 50 ? 'font-semibold text-slate-200' : ''"
+                          >
+                            <span class="inline-block h-2 w-2 rounded-full bg-primary"></span>
+                            Attaque {{ currentAttackBalance.attackPercent }}%
                           </span>
-                        </Button>
+                          <span
+                              class="flex items-center gap-2"
+                              :class="currentAttackBalance.defensePercent > 50 ? 'font-semibold text-slate-200' : ''"
+                          >
+                            <span class="inline-block h-2 w-2 rounded-full bg-amber-400"></span>
+                            Défense {{ currentAttackBalance.defensePercent }}%
+                          </span>
+                        </div>
                       </div>
-                      <p v-if="potentialTargets.length === 0" class="text-xs text-slate-500">
-                        Aucun territoire adverse adjacent.
+                      <p class="text-xs text-slate-500">
+                        Base de défense : {{ currentAttackStats.baseDefense }}
                       </p>
                     </div>
+                  </div>
 
-                    <div v-if="selectedOwnedTerritory && targetTerritory" class="space-y-2 text-xs text-slate-300">
-                      <p>
-                        Objectif :
-                        <span class="font-semibold text-slate-100">{{ targetTerritory.name }}</span>
-                        <span class="text-slate-400">
-                          (défense {{ targetTerritory.defensePower ?? 0 }})
-                        </span>
-                      </p>
-                      <p>
-                        Commande Twitch :
+                  <div
+                      v-if="currentReinforcementStats"
+                      class="space-y-3 rounded-xl border border-sky-500/40 bg-slate-900/70 p-4 ring-1 ring-sky-500/20"
+                  >
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Renfort sur</p>
+                        <p class="text-lg font-semibold text-slate-100">
+                          {{
+                            currentReinforcementStats.reinforcement.territoryName ??
+                            currentReinforcementStats.reinforcement.territoryId
+                          }}
+                        </p>
+                      </div>
+                      <div class="text-right">
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Temps restant</p>
+                        <p class="text-2xl font-semibold text-sky-300">
+                          {{ formatDuration(currentReinforcementStats.remaining) }}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+                      <span>Messages
+                        <span class="font-semibold text-slate-100">{{ currentReinforcementStats.messages }}</span>
+                      </span>
+                      <span>Participants
+                        <span class="font-semibold text-slate-100">{{ currentReinforcementStats.participants }}</span>
+                      </span>
+                      <span>Défense actuelle
+                        <span class="font-semibold text-slate-100">{{ currentReinforcementStats.accumulatedBonus }}</span>
+                      </span>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                      <p class="text-xs text-slate-400">
+                        Votre chat peut spammer
                         <span class="font-mono text-primary">
-                          {{ attackCommandLabel || '!attaque <pays>' }}
+                          {{ reinforcementCommandLabel || '!renfort &lt;pays&gt;' }}
                         </span>
+                        pour booster la défense.
                       </p>
-                    </div>
-
-                    <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
                       <Button
                           variant="outline"
                           size="sm"
                           class="pointer-events-auto"
-                          @click="cancelSelection"
-                          :disabled="!selectedOwnedTerritory && !targetTerritory"
+                          :disabled="cancelReinforcementLoading"
+                          @click="cancelCurrentReinforcement"
                       >
-                        <OctagonMinus class="size-4"/>
-                        Réinitialiser
-                      </Button>
-                      <Button
-                          variant="default"
-                          size="lg"
-                          class="pointer-events-auto"
-                          :disabled="!attackCTAEnabled"
-                          @click="launchAttack"
-                      >
-                        <Swords class="size-5"/>
-                        <span v-if="attackLoading">Préparation...</span>
-                        <span v-else>Lancer l'attaque</span>
+                        <OctagonX class="size-4"/>
+                        <span v-if="cancelReinforcementLoading">Annulation...</span>
+                        <span v-else>Annuler le renfort</span>
                       </Button>
                     </div>
-
-                    <p class="text-xs text-slate-500">
-                      Sélectionnez un territoire que vous contrôlez puis une cible limitrophe à attaquer.
-                      Pendant {{ attackWindowLabel }}, vos viewers doivent spammer
-                      <span class="font-mono">{{ attackCommandLabel || '!attaque &lt;pays&gt;' }}</span>
-                      sur Twitch pour augmenter la puissance d'attaque.
-                    </p>
                   </div>
-                </div>
+                </template>
+
+                <template v-else-if="defendingAttackStats">
+                  <div class="space-y-4">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Territoire à défendre</p>
+                        <p class="text-lg font-semibold text-slate-100">
+                          {{ defendingAttack?.toTerritoryName ?? defendingAttack?.toTerritory }}
+                        </p>
+                        <p class="text-xs text-slate-500">
+                          Attaquant :
+                          <span class="font-medium text-slate-200">
+                            {{ getPlayerUsername(defendingAttack?.attackerId) ?? 'Inconnu' }}
+                          </span>
+                        </p>
+                      </div>
+                      <div class="text-right">
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Temps restant</p>
+                        <p class="text-2xl font-semibold text-amber-300">
+                          {{ formatDuration(defendingAttackStats.remaining) }}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div class="space-y-3 rounded-xl border border-white/10 bg-accent/60 p-4">
+                      <p class="text-2xl font-medium text-amber-200">
+                        {{ defendingEncouragement }}
+                      </p>
+                      <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+                        <span>Messages
+                          <span class="font-semibold text-slate-100">{{ defendingAttackStats.messages }}</span>
+                        </span>
+                        <span>Défense
+                          <span class="font-semibold text-slate-100">{{ defendingAttackStats.defensePoints }}</span>
+                        </span>
+                        <span>Puissance adverse
+                          <span class="font-semibold text-slate-100">{{ defendingAttackStats.attackPoints }}</span>
+                        </span>
+                      </div>
+                      <div class="space-y-2">
+                        <div class="relative h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                          <div
+                              class="absolute inset-y-0 left-0 bg-primary/80 transition-all duration-500"
+                              :style="{ width: `${defendingAttackBalance.attackPercent}%` }"
+                          ></div>
+                          <div
+                              class="absolute inset-y-0 right-0 bg-amber-400 transition-all duration-500"
+                              :style="{ width: `${defendingAttackBalance.defensePercent}%` }"
+                          ></div>
+                          <div class="absolute inset-y-0 left-1/2 w-1 -translate-x-1/2 transform bg-white/60"></div>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] text-slate-400">
+                          <span
+                              class="flex items-center gap-2"
+                              :class="defendingAttackBalance.attackPercent > 50 ? 'font-semibold text-slate-200' : ''"
+                          >
+                            <span class="inline-block h-2 w-2 rounded-full bg-primary/80"></span>
+                            Attaque {{ defendingAttackBalance.attackPercent }}%
+                          </span>
+                          <span
+                              class="flex items-center gap-2"
+                              :class="defendingAttackBalance.defensePercent > 50 ? 'font-semibold text-slate-200' : ''"
+                          >
+                            <span class="inline-block h-2 w-2 rounded-full bg-amber-400"></span>
+                            Défense {{ defendingAttackBalance.defensePercent }}%
+                          </span>
+                        </div>
+                      </div>
+                      <p class="text-xs text-slate-500">
+                        Base de défense : {{ defendingAttackStats.baseDefense }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                      v-if="currentReinforcementStats"
+                      class="space-y-3 rounded-xl border border-sky-500/40 bg-slate-900/70 p-4 ring-1 ring-sky-500/20"
+                  >
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Renfort sur</p>
+                        <p class="text-lg font-semibold text-slate-100">
+                          {{
+                            currentReinforcementStats.reinforcement.territoryName ??
+                            currentReinforcementStats.reinforcement.territoryId
+                          }}
+                        </p>
+                      </div>
+                      <div class="text-right">
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Temps restant</p>
+                        <p class="text-2xl font-semibold text-sky-300">
+                          {{ formatDuration(currentReinforcementStats.remaining) }}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+                      <span>Messages
+                        <span class="font-semibold text-slate-100">{{ currentReinforcementStats.messages }}</span>
+                      </span>
+                      <span>Participants
+                        <span class="font-semibold text-slate-100">{{ currentReinforcementStats.participants }}</span>
+                      </span>
+                      <span>Défense actuelle
+                        <span class="font-semibold text-slate-100">{{ currentReinforcementStats.accumulatedBonus }}</span>
+                      </span>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                      <p class="text-xs text-slate-400">
+                        Votre chat peut spammer
+                        <span class="font-mono text-primary">
+                          {{ reinforcementCommandLabel || '!renfort &lt;pays&gt;' }}
+                        </span>
+                        pour booster la défense.
+                      </p>
+                      <Button
+                          variant="outline"
+                          size="sm"
+                          class="pointer-events-auto"
+                          :disabled="cancelReinforcementLoading"
+                          @click="cancelCurrentReinforcement"
+                      >
+                        <OctagonX class="size-4"/>
+                        <span v-if="cancelReinforcementLoading">Annulation...</span>
+                        <span v-else>Annuler le renfort</span>
+                      </Button>
+                    </div>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <div
+                      v-if="showAttackActions || showReinforcementActions"
+                      class="overflow-hidden rounded-xl border border-white/10 bg-accent/60"
+                  >
+                    <div
+                        v-if="showAttackActions"
+                        class="space-y-4 p-4"
+                        :class="showReinforcementActions ? 'pb-6' : ''"
+                    >
+                      <div v-if="lastAttackResult" class="rounded-lg border border-white/10 bg-slate-900/50 p-4">
+                        <p
+                            class="text-sm font-semibold"
+                            :class="{
+                              'text-emerald-300': lastAttackResult.outcome === 'win',
+                              'text-red-300': lastAttackResult.outcome === 'loss',
+                              'text-slate-300': lastAttackResult.outcome === 'draw'
+                            }"
+                        >
+                          <template v-if="lastAttackResult.outcome === 'win'">Victoire !</template>
+                          <template v-else-if="lastAttackResult.outcome === 'loss'">Défaite…</template>
+                          <template v-else>Égalité</template>
+                          <span class="ml-2 text-xs text-slate-400">
+                            {{ lastAttackResult.attack.attackPoints }} vs {{ lastAttackResult.attack.defensePoints }}
+                          </span>
+                        </p>
+                      </div>
+
+                      <div class="space-y-3 text-sm text-slate-300">
+                        <div class="flex flex-wrap items-center justify-between gap-4">
+                          <div>
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Territoire source</p>
+                            <p class="text-sm font-semibold text-slate-100">
+                              {{ selectedOwnedTerritory?.name ?? 'Non sélectionné' }}
+                            </p>
+                          </div>
+                          <div>
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Cible</p>
+                            <p class="text-sm font-semibold text-slate-100">
+                              {{ targetTerritory?.name ?? 'Non sélectionnée' }}
+                            </p>
+                          </div>
+                          <div class="text-right">
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Fenêtre d'action</p>
+                            <p class="text-sm font-semibold text-slate-100">{{ attackWindowLabel }}</p>
+                          </div>
+                        </div>
+
+                        <p v-if="attackError" class="text-xs font-medium text-red-300">{{ attackError }}</p>
+
+                        <div v-if="selectedOwnedTerritory && targetTerritory" class="space-y-2 text-xs text-slate-300">
+                          <p>
+                            Objectif :
+                            <span class="font-semibold text-slate-100">{{ targetTerritory.name }}</span>
+                            <span class="text-slate-400">
+                              (défense {{ targetTerritory.defensePower ?? 0 }})
+                            </span>
+                          </p>
+                          <p>
+                            Commande Twitch :
+                            <span class="font-mono text-primary">
+                              {{ attackCommandLabel || '!attaque <pays>' }}
+                            </span>
+                          </p>
+                          <p v-if="selectedReinforcement" class="text-amber-300">
+                            Impossible d'utiliser ce territoire pendant un renfort en cours.
+                          </p>
+                        </div>
+
+                        <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+                          <Button
+                              variant="outline"
+                              size="sm"
+                              class="pointer-events-auto"
+                              @click="cancelSelection"
+                              :disabled="!selectedOwnedTerritory && !targetTerritory"
+                          >
+                            <OctagonMinus class="size-4"/>
+                            Réinitialiser
+                          </Button>
+                          <Button
+                              variant="default"
+                              size="lg"
+                              class="pointer-events-auto"
+                              :disabled="!attackCTAEnabled"
+                              @click="launchAttack"
+                          >
+                            <Swords class="size-5"/>
+                            <span v-if="attackLoading">Préparation...</span>
+                            <span v-else>Lancer l'attaque</span>
+                          </Button>
+                        </div>
+
+                        <p class="text-xs text-slate-500">
+                          Sélectionnez un territoire que vous contrôlez puis une cible limitrophe à attaquer.
+                          Pendant {{ attackWindowLabel }}, vos viewers doivent spammer
+                          <span class="font-mono">{{ attackCommandLabel || '!attaque <pays>' }}</span>
+                          sur Twitch pour augmenter la puissance d'attaque.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div
+                        v-if="showReinforcementActions"
+                        class="space-y-3 p-4"
+                        :class="showAttackActions ? 'border-t border-white/10 bg-slate-900/40' : ''"
+                    >
+                      <div
+                          v-if="currentReinforcementStats"
+                          class="space-y-3 rounded-lg border border-sky-500/40 bg-slate-900/60 p-4 ring-1 ring-sky-500/20"
+                      >
+                        <div class="flex flex-wrap items-start justify-between gap-4">
+                          <div>
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Renfort en cours</p>
+                            <p class="text-lg font-semibold text-slate-100">
+                              {{
+                                currentReinforcementStats.reinforcement.territoryName ??
+                                currentReinforcementStats.reinforcement.territoryId
+                              }}
+                            </p>
+                          </div>
+                          <div class="text-right">
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Temps restant</p>
+                            <p class="text-2xl font-semibold text-sky-300">
+                              {{ formatDuration(currentReinforcementStats.remaining) }}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+                          <span>Messages
+                            <span class="font-semibold text-slate-100">{{ currentReinforcementStats.messages }}</span>
+                          </span>
+                          <span>Participants
+                            <span class="font-semibold text-slate-100">{{ currentReinforcementStats.participants }}</span>
+                          </span>
+                          <span>Défense actuelle
+                            <span class="font-semibold text-slate-100">{{ currentReinforcementStats.accumulatedBonus }}</span>
+                          </span>
+                        </div>
+
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                          <p class="text-xs text-slate-400">
+                            Votre chat peut spammer
+                            <span class="font-mono text-primary">
+                              {{ reinforcementCommandLabel || '!renfort &lt;pays&gt;' }}
+                            </span>
+                            pour booster la défense.
+                          </p>
+                          <Button
+                              variant="outline"
+                              size="sm"
+                              class="pointer-events-auto"
+                              :disabled="cancelReinforcementLoading"
+                              @click="cancelCurrentReinforcement"
+                          >
+                            <OctagonX class="size-4"/>
+                            <span v-if="cancelReinforcementLoading">Annulation...</span>
+                            <span v-else>Annuler le renfort</span>
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div class="space-y-3 text-sm text-slate-300">
+                        <div class="flex flex-wrap items-center justify-between gap-4">
+                          <div>
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Territoire</p>
+                            <p class="text-sm font-semibold text-slate-100">
+                              {{ selectedOwnedTerritory?.name ?? 'Sélectionnez un territoire à renforcer' }}
+                            </p>
+                          </div>
+                          <div class="text-right">
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Fenêtre d'action</p>
+                            <p class="text-sm font-semibold text-slate-100">{{ reinforcementWindowLabel }}</p>
+                          </div>
+                        </div>
+
+                        <p v-if="reinforcementError" class="text-xs font-medium text-red-300">{{ reinforcementError }}</p>
+
+                        <div v-if="selectedOwnedTerritory" class="space-y-1 text-xs text-slate-300">
+                          <p>
+                            Défense actuelle :
+                            <span class="font-semibold text-slate-100">
+                              {{ selectedOwnedTerritory.defensePower ?? 0 }}
+                            </span>
+                          </p>
+                          <p>
+                            Commande Twitch :
+                            <span class="font-mono text-primary">
+                              {{ reinforcementCommandLabel || '!renfort &lt;pays&gt;' }}
+                            </span>
+                          </p>
+                          <p v-if="selectedReinforcement" class="text-amber-300">
+                            Un renfort est déjà en cours sur ce territoire.
+                          </p>
+                        </div>
+                        <div v-else class="text-xs text-slate-500">
+                          Sélectionnez l'un de vos territoires pour préparer un renfort.
+                        </div>
+
+                        <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+                          <Button
+                              variant="outline"
+                              size="sm"
+                              class="pointer-events-auto"
+                              :disabled="!selectedOwnedTerritory"
+                              @click="cancelSelection"
+                          >
+                            <OctagonMinus class="size-4"/>
+                            Réinitialiser
+                          </Button>
+                          <Button
+                              variant="secondary"
+                              size="lg"
+                              class="pointer-events-auto"
+                              :disabled="!reinforcementCTAEnabled"
+                              @click="launchReinforcement"
+                          >
+                            <Shield class="size-5"/>
+                            <span v-if="reinforcementLoading">Préparation...</span>
+                            <span v-else>Lancer un renfort</span>
+                          </Button>
+                        </div>
+
+                        <p class="text-xs text-slate-500">
+                          Activez un renfort pour augmenter durablement la défense du territoire sélectionné.
+                          Pendant {{ reinforcementWindowLabel }}, vos viewers doivent spammer
+                          <span class="font-mono">{{ reinforcementCommandLabel || '!renfort &lt;pays&gt;' }}</span>
+                          sur Twitch.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-else class="rounded-lg border border-white/10 bg-slate-900/50 p-4 text-sm text-slate-300">
+                    <p v-if="attackError" class="text-xs font-medium text-red-300">{{ attackError }}</p>
+                    <p v-else-if="reinforcementError" class="text-xs font-medium text-red-300">{{ reinforcementError }}</p>
+                    <p v-else>Aucune action disponible pour ce territoire.</p>
+                  </div>
+                </template>
               </CardContent>
+
             </Card>
           </section>
         </main>

@@ -1,5 +1,6 @@
 import GameManager from '../managers/GameManager.js';
 import AttackManager from '../managers/AttackManager.js';
+import ReinforcementManager from '../managers/ReinforcementManager.js';
 import TwitchService from '../services/TwitchService.js';
 
 const connections = new Map(); // playerId -> WebSocket
@@ -144,13 +145,13 @@ export function setupWebSocket(connection, req) {
 
                 // Setup command handler pour cette partie (une seule fois)
                 if (!TwitchService.commandHandlers.has(gameId)) {
-                    TwitchService.setCommandHandler(gameId, (commandType, username, territoryId, attackData) => {
+                    TwitchService.setCommandHandler(gameId, (commandType, username, territoryId, payloadData) => {
                         broadcastToGame(gameId, {
                             type: 'command:received',
                             commandType,
                             username,
                             territoryId,
-                            attack: attackData,
+                            ...payloadData,
                             timestamp: Date.now()
                         });
                     });
@@ -162,6 +163,159 @@ export function setupWebSocket(connection, req) {
                     territoryId: toTerritory
                 });
                 break;
+            case 'reinforcement:start': {
+                if (!playerId) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Player not registered'
+                    }));
+                    break;
+                }
+
+                const targetTerritory = payload?.territoryId;
+                if (!targetTerritory) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'territoryId is required'
+                    }));
+                    break;
+                }
+
+                const reinforcementGame = GameManager.getGameByPlayerId(playerId);
+                if (!reinforcementGame) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Game not found'
+                    }));
+                    break;
+                }
+
+                try {
+                    const reinforcement = ReinforcementManager.startReinforcement(
+                        reinforcementGame.id,
+                        playerId,
+                        targetTerritory,
+                        {
+                            onStart: (reinforcementData) => {
+                                broadcastToGame(reinforcementGame.id, {
+                                    type: 'reinforcement:started',
+                                    reinforcement: reinforcementData,
+                                    territoryId: targetTerritory
+                                });
+                            },
+                            onTick: (reinforcementData) => {
+                                broadcastToGame(reinforcementGame.id, {
+                                    type: 'reinforcement:update',
+                                    reinforcement: reinforcementData,
+                                    territoryId: targetTerritory
+                                });
+                            },
+                            onFinish: (reinforcementData, gameData) => {
+                                broadcastToGame(reinforcementGame.id, {
+                                    type: 'reinforcement:finished',
+                                    reinforcement: reinforcementData,
+                                    territoryId: targetTerritory,
+                                    game: gameData
+                                });
+
+                                if (reinforcementData) {
+                                    TwitchService.announceReinforcementFinish(
+                                        reinforcementGame,
+                                        reinforcementData
+                                    ).catch((error) => {
+                                        console.warn('Failed to announce reinforcement result:', error.message);
+                                    });
+                                }
+                            }
+                        }
+                    );
+
+                    await TwitchService.syncGameChannels(reinforcementGame);
+                    await TwitchService.announceReinforcementStart(reinforcementGame, reinforcement);
+
+                    if (!TwitchService.commandHandlers.has(reinforcementGame.id)) {
+                        TwitchService.setCommandHandler(
+                            reinforcementGame.id,
+                            (commandType, username, territoryId, payloadData) => {
+                                broadcastToGame(reinforcementGame.id, {
+                                    type: 'command:received',
+                                    commandType,
+                                    username,
+                                    territoryId,
+                                    ...payloadData,
+                                    timestamp: Date.now()
+                                });
+                            }
+                        );
+                    }
+                } catch (error) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: error.message || 'Unable to start reinforcement'
+                    }));
+                }
+                break;
+            }
+
+            case 'reinforcement:cancel': {
+                if (!playerId) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Player not registered'
+                    }));
+                    break;
+                }
+
+                const targetTerritory = payload?.territoryId;
+                if (!targetTerritory) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'territoryId is required'
+                    }));
+                    break;
+                }
+
+                const reinforcementGame = GameManager.getGameByPlayerId(playerId);
+                if (!reinforcementGame) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'Game not found'
+                    }));
+                    break;
+                }
+
+                const reinforcement = ReinforcementManager.cancelReinforcement(
+                    reinforcementGame.id,
+                    targetTerritory,
+                    {
+                        cancelledBy: playerId,
+                        reason: 'player_cancelled'
+                    },
+                    {
+                        onCancel: (reinforcementData, gameData) => {
+                            broadcastToGame(reinforcementGame.id, {
+                                type: 'reinforcement:cancelled',
+                                reinforcement: reinforcementData,
+                                territoryId: targetTerritory,
+                                cancelledBy: playerId,
+                                game: gameData
+                            });
+                        }
+                    }
+                );
+
+                if (!reinforcement) {
+                    socket.send(JSON.stringify({
+                        type: 'error',
+                        error: 'No reinforcement to cancel'
+                    }));
+                    break;
+                }
+
+                await TwitchService.syncGameChannels(reinforcementGame);
+                await TwitchService.announceReinforcementCancellation(reinforcementGame, reinforcement);
+                break;
+            }
 
             case 'attack:cancel': {
                 if (!playerId) {

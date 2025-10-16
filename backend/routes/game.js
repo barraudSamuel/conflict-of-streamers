@@ -1,6 +1,7 @@
 import GameManager from '../managers/GameManager.js';
 import AttackManager from '../managers/AttackManager.js';
 import TwitchService from '../services/TwitchService.js';
+import ReinforcementManager from '../managers/ReinforcementManager.js';
 import { broadcastToGame } from '../websocket/socketHandler.js';
 
 export default async function gameRoutes(fastify) {
@@ -188,6 +189,37 @@ export default async function gameRoutes(fastify) {
             return {
                 success: true,
                 canAttack: true
+            };
+        } catch (error) {
+            return reply.code(400).send({ error: error.message });
+        }
+    });
+
+    // Lancer un renfort
+    fastify.post('/:gameId/reinforcement', async (request, reply) => {
+        try {
+            const { gameId } = request.params;
+            const { playerId, territoryId } = request.body;
+
+            if (!playerId || !territoryId) {
+                return reply.code(400).send({
+                    error: 'playerId and territoryId are required'
+                });
+            }
+
+            const game = GameManager.getGame(gameId);
+            if (!game) {
+                return reply.code(404).send({ error: 'Game not found' });
+            }
+
+            const validation = ReinforcementManager.canReinforce(game, playerId, territoryId);
+            if (!validation.valid) {
+                return reply.code(400).send({ error: validation.error });
+            }
+
+            return {
+                success: true,
+                canReinforce: true
             };
         } catch (error) {
             return reply.code(400).send({ error: error.message });

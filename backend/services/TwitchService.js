@@ -1,6 +1,7 @@
 import tmi from 'tmi.js';
 import GameManager from '../managers/GameManager.js';
 import AttackManager from '../managers/AttackManager.js';
+import ReinforcementManager from '../managers/ReinforcementManager.js';
 
 const READY_STATE_OPEN = 'OPEN';
 
@@ -193,7 +194,7 @@ class TwitchService {
         const msg = typeof message === 'string' ? message.trim().toLowerCase() : '';
         if (!msg) return;
 
-        const processCommand = (territoryId, isDefense) => {
+        const processAttackCommand = (territoryId, isDefense) => {
             const added = AttackManager.addAttackCommand(game.id, territoryId, username, isDefense);
             if (added) {
                 const updatedAttack = game.activeAttacks.get(territoryId);
@@ -202,7 +203,7 @@ class TwitchService {
                     isDefense ? 'defense' : 'attack',
                     username,
                     territoryId,
-                    updatedAttack ? updatedAttack.toJSON() : null
+                    { attack: updatedAttack ? updatedAttack.toJSON() : null }
                 );
             }
         };
@@ -213,7 +214,7 @@ class TwitchService {
                 if (attack.attackerId === playerId && attack.status === 'ongoing') {
                     const targetMatch = this.doesTargetMatch(attack, territoryId, target);
                     if (targetMatch) {
-                        processCommand(territoryId, false);
+                        processAttackCommand(territoryId, false);
                     }
                 }
             }
@@ -229,17 +230,51 @@ class TwitchService {
                 if (attack.defenderId === playerId && attack.status === 'ongoing') {
                     const targetMatch = this.doesTargetMatch(attack, territoryId, target);
                     if (targetMatch) {
-                        processCommand(territoryId, true);
+                        processAttackCommand(territoryId, true);
+                    }
+                }
+            }
+        }
+
+        if (
+            msg.startsWith('!renfort ') ||
+            msg.startsWith('!reinforce ') ||
+            msg.startsWith('!boost ')
+        ) {
+            const target = msg.split(' ')[1];
+            for (let [territoryId, reinforcement] of game.activeReinforcements) {
+                if (reinforcement.initiatorId === playerId && reinforcement.status === 'ongoing') {
+                    const synthetic = {
+                        toTerritoryName: reinforcement.territoryName,
+                        toTerritory: reinforcement.territoryId
+                    };
+                    const targetMatch = this.doesTargetMatch(synthetic, territoryId, target);
+                    if (targetMatch) {
+                        const updated = ReinforcementManager.addContribution(
+                            game.id,
+                            territoryId,
+                            username,
+                            game.settings?.pointsPerCommand ?? 1
+                        );
+                        if (updated) {
+                            this.notifyCommandProcessed(
+                                game.id,
+                                'reinforcement',
+                                username,
+                                territoryId,
+                                { reinforcement: updated }
+                            );
+                        }
                     }
                 }
             }
         }
     }
 
-    notifyCommandProcessed(gameId, type, username, territoryId, attackData = null) {
+    notifyCommandProcessed(gameId, type, username, territoryId, payload = {}) {
         const handler = this.commandHandlers.get(gameId);
         if (handler) {
-            handler(type, username, territoryId, attackData);
+            handler(type, username, territoryId, payload);
         }
     }
 
@@ -343,6 +378,49 @@ class TwitchService {
         }
         if (defender) {
             await this.sendMessage(attack.defenderId, resultMessage);
+        }
+    }
+
+    async announceReinforcementStart(game, reinforcement) {
+        if (!reinforcement) return;
+
+        const initiator = game.players.find(p => p.id === reinforcement.initiatorId);
+        const territoryLabel = reinforcement.territoryName || reinforcement.territoryId || 'ce territoire';
+
+        if (initiator) {
+            await this.sendMessage(
+                initiator.id,
+                `✨ Renfort lancé sur ${territoryLabel} ! Tapez !renfort ${territoryLabel} pour booster la défense.`
+            );
+        }
+    }
+
+    async announceReinforcementCancellation(game, reinforcement) {
+        if (!reinforcement) return;
+
+        const initiator = game.players.find(p => p.id === reinforcement.initiatorId);
+        const territoryLabel = reinforcement.territoryName || reinforcement.territoryId || 'ce territoire';
+
+        if (initiator) {
+            await this.sendMessage(
+                initiator.id,
+                `⏹️ Renfort annulé sur ${territoryLabel}.`
+            );
+        }
+    }
+
+    async announceReinforcementFinish(game, reinforcement) {
+        if (!reinforcement) return;
+
+        const initiator = game.players.find(p => p.id === reinforcement.initiatorId);
+        const territoryLabel = reinforcement.territoryName || reinforcement.territoryId || 'ce territoire';
+        const bonus = Number(reinforcement.accumulatedBonus) || 0;
+
+        if (initiator) {
+            await this.sendMessage(
+                initiator.id,
+                `💪 Renfort sur ${territoryLabel} terminé ! Défense totale: ${bonus}.`
+            );
         }
     }
 }
