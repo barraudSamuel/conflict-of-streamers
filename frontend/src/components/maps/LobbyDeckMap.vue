@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Deck } from '@deck.gl/core'
+import { COORDINATE_SYSTEM, Deck } from '@deck.gl/core'
 import type { PickingInfo } from '@deck.gl/core'
 import { GeoJsonLayer, TextLayer } from '@deck.gl/layers'
+import { SimpleMeshLayer } from '@deck.gl/mesh-layers'
 import {
   lobbyTerritories,
   type LobbyTerritoryCollection,
   type LobbyTerritoryFeature
 } from '@/data/lobbyTerritories'
+import earcut from 'earcut'
 
 interface LobbyTerritory {
   id: string
@@ -21,6 +23,7 @@ interface LobbyPlayer {
   id: string
   twitchUsername?: string | null
   color?: string | null
+  avatarUrl?: string | null
 }
 
 interface ActiveAttack {
@@ -84,6 +87,7 @@ const ATTACK_ARROW_COLOR: [number, number, number, number] = [239, 68, 68, 235]
 const ATTACK_ARROW_SIZE_MIN = 14
 const ATTACK_ARROW_SIZE_MAX = 30
 const BORDER_DISTANCE_EPSILON = 1e-6
+const MIN_POLYGON_EXTENT = 1e-6
 
 interface DefenseLabelDatum {
   position: [number, number]
@@ -96,6 +100,20 @@ interface AttackArrowDatum {
   id: string
   position: [number, number]
   angle: number
+}
+
+interface AvatarMeshAttributes {
+  attributes: {
+    POSITION: { size: 3; value: Float32Array }
+    TEXCOORD_0: { size: 2; value: Float32Array }
+  }
+  indices: { size: 1; value: Uint16Array | Uint32Array }
+}
+
+interface AvatarMeshDatum {
+  id: string
+  mesh: AvatarMeshAttributes
+  texture: string
 }
 
 type Coordinate2D = [number, number]
@@ -392,6 +410,183 @@ const computeFeatureCentroid = (feature: LobbyTerritoryFeature): Coordinate2D | 
   return [sumLon * inv, sumLat * inv]
 }
 
+const sanitizeRing = (ring: number[][]): Coordinate2D[] => {
+  const coords: Coordinate2D[] = []
+  ring.forEach((coordinate) => {
+    const pair = toCoordinate2D(coordinate)
+    if (pair) {
+      coords.push(pair)
+    }
+  })
+
+  if (coords.length >= 2) {
+    const [firstLon, firstLat] = coords[0]
+    const [lastLon, lastLat] = coords[coords.length - 1]
+    if (Math.abs(firstLon - lastLon) < 1e-9 && Math.abs(firstLat - lastLat) < 1e-9) {
+      coords.pop()
+    }
+  }
+
+  return coords
+}
+
+const ringArea = (ring: Coordinate2D[]): number => {
+  if (ring.length < 3) return 0
+  let sum = 0
+  for (let i = 0; i < ring.length; i += 1) {
+    const [x1, y1] = ring[i]
+    const [x2, y2] = ring[(i + 1) % ring.length]
+    sum += x1 * y2 - x2 * y1
+  }
+  return Math.abs(sum) * 0.5
+}
+
+const selectPrimaryPolygon = (feature: LobbyTerritoryFeature): Coordinate2D[][] => {
+  const geometry = feature.geometry
+  if (!geometry) {
+    return []
+  }
+
+  if (geometry.type === 'Polygon') {
+    return geometry.coordinates
+      .map((ring) => sanitizeRing(ring as number[][]))
+      .filter((ring) => ring.length >= 3)
+  }
+
+  if (geometry.type === 'MultiPolygon') {
+    const candidates = geometry.coordinates
+      .map((polygon) =>
+        polygon
+          .map((ring) => sanitizeRing(ring as number[][]))
+          .filter((ring) => ring.length >= 3)
+      )
+      .filter((rings) => rings.length > 0)
+
+    if (!candidates.length) {
+      return []
+    }
+
+    candidates.sort((a, b) => {
+      const areaA = ringArea(a[0])
+      const areaB = ringArea(b[0])
+      return areaB - areaA
+    })
+
+    return candidates[0]
+  }
+
+  return []
+}
+
+const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
+  const meshes: AvatarMeshDatum[] = []
+  const playerById = new Map(props.players.map((player) => [player.id, player]))
+
+  props.territories.forEach((territory) => {
+    const ownerId = territory.ownerId ?? null
+    if (!ownerId || typeof ownerId !== 'string' || ownerId.startsWith(BOT_OWNER_PREFIX)) {
+      return
+    }
+
+    const owner = playerById.get(ownerId)
+    const avatarUrl =
+      typeof owner?.avatarUrl === 'string' && owner.avatarUrl.trim() !== ''
+        ? owner.avatarUrl.trim()
+        : null
+
+    if (!avatarUrl) {
+      return
+    }
+
+    const feature =
+      resolveTerritoryFeature(territory.id ?? territory.code ?? territory.name ?? null) ?? null
+    if (!feature) {
+      return
+    }
+
+    const rings = selectPrimaryPolygon(feature)
+    if (!rings.length) {
+      return
+    }
+
+    const flattened: number[] = []
+    const holeIndices: number[] = []
+    let vertexCount = 0
+    let minLon = Number.POSITIVE_INFINITY
+    let minLat = Number.POSITIVE_INFINITY
+    let maxLon = Number.NEGATIVE_INFINITY
+    let maxLat = Number.NEGATIVE_INFINITY
+
+    rings.forEach((ring, ringIndex) => {
+      if (ring.length < 3) return
+      if (ringIndex > 0) {
+        holeIndices.push(vertexCount)
+      }
+      ring.forEach(([lon, lat]) => {
+        flattened.push(lon, lat)
+        vertexCount += 1
+        if (lon < minLon) minLon = lon
+        if (lon > maxLon) maxLon = lon
+        if (lat < minLat) minLat = lat
+        if (lat > maxLat) maxLat = lat
+      })
+    })
+
+    if (vertexCount < 3) {
+      return
+    }
+
+    const width = maxLon - minLon
+    const height = maxLat - minLat
+    if (width < MIN_POLYGON_EXTENT || height < MIN_POLYGON_EXTENT) {
+      return
+    }
+
+    const indices = earcut(flattened, holeIndices, 2)
+    if (!indices || indices.length === 0) {
+      return
+    }
+
+    const positions = new Float32Array(vertexCount * 3)
+    const texCoords = new Float32Array(vertexCount * 2)
+    const scale = Math.max(width, height)
+    const widthNorm = width / scale
+    const heightNorm = height / scale
+    const uOffset = (1 - widthNorm) * 0.5
+    const vOffset = (1 - heightNorm) * 0.5
+
+    for (let i = 0; i < vertexCount; i += 1) {
+      const lon = flattened[i * 2]
+      const lat = flattened[i * 2 + 1]
+      positions[i * 3] = lon
+      positions[i * 3 + 1] = lat
+      positions[i * 3 + 2] = 0
+
+      const u = ((lon - minLon) / scale + uOffset) || 0
+      const v = ((lat - minLat) / scale + vOffset) || 0
+      texCoords[i * 2] = Math.min(1, Math.max(0, u))
+      texCoords[i * 2 + 1] = 1 - Math.min(1, Math.max(0, v))
+    }
+
+    const indexArray =
+      vertexCount > 65535 ? new Uint32Array(indices) : new Uint16Array(indices)
+
+    meshes.push({
+      id: `${territory.id ?? feature.properties?.id ?? 'unknown'}:${ownerId}`,
+      mesh: {
+        attributes: {
+          POSITION: { size: 3, value: positions },
+          TEXCOORD_0: { size: 2, value: texCoords }
+        },
+        indices: { size: 1, value: indexArray }
+      },
+      texture: avatarUrl
+    })
+  })
+
+  return meshes
+})
+
 const attackArrowMarkers = computed<AttackArrowDatum[]>(() => {
   if (!showAttackOverlay.value) return []
   const attacks = Array.isArray(props.activeAttacks) ? props.activeAttacks : []
@@ -578,30 +773,53 @@ const computeFillColor = (feature: DeckFeature) => {
     return DEFAULT_AVAILABLE_COLOR
   }
 
-  const baseColor = info.ownerColor ? hexToRgba(info.ownerColor, 210) : DEFAULT_OCCUPIED_COLOR
+  const isBot = info.isBot
+  const baseColor = isBot ? hexToRgba(info.ownerColor, 210) : DEFAULT_OCCUPIED_COLOR
 
   if (info.ownerId === props.currentPlayerId) {
-    const color = info.ownerColor ? hexToRgba(info.ownerColor, info.isReinforced ? 255 : 235) : CURRENT_PLAYER_FALLBACK_COLOR
-    if (info.isReinforced && Array.isArray(color)) {
+    if (isBot) {
+      const botColor = hexToRgba(info.ownerColor, info.isReinforced ? 255 : 235)
+      if (info.isReinforced) {
+        return [
+          Math.min(255, botColor[0] + 10),
+          Math.min(255, botColor[1] + 14),
+          Math.min(255, botColor[2] + 18),
+          botColor[3]
+        ]
+      }
+      return botColor
+    }
+
+    const highlight = [...CURRENT_PLAYER_FALLBACK_COLOR] as [number, number, number, number]
+    if (info.isReinforced) {
       return [
-        Math.min(255, color[0] + 12),
-        Math.min(255, color[1] + 18),
-        Math.min(255, color[2] + 18),
-        color[3]
+        Math.min(255, highlight[0] + 12),
+        Math.min(255, highlight[1] + 18),
+        Math.min(255, highlight[2] + 16),
+        highlight[3]
       ]
     }
-    return color
+    return highlight
   }
 
-  if (info.isBot) {
-    return hexToRgba(info.ownerColor, 210)
+  if (isBot) {
+    const botColor = hexToRgba(info.ownerColor, info.isReinforced ? 235 : 210)
+    if (info.isReinforced) {
+      return [
+        Math.min(255, botColor[0] + 8),
+        Math.min(255, botColor[1] + 12),
+        Math.min(255, botColor[2] + 16),
+        botColor[3]
+      ]
+    }
+    return botColor
   }
 
   if (info.isReinforced) {
     return [
-      Math.min(255, baseColor[0]),
-      Math.min(255, baseColor[1] + 20),
-      Math.min(255, baseColor[2] + 35),
+      Math.min(255, baseColor[0] + 6),
+      Math.min(255, baseColor[1] + 18),
+      Math.min(255, baseColor[2] + 28),
       baseColor[3]
     ]
   }
@@ -755,8 +973,31 @@ const createAttackArrowLayer = () =>
     }
   })
 
+const createAvatarMeshLayers = () =>
+  territoryAvatarMeshes.value.map(
+    (datum) =>
+      new SimpleMeshLayer({
+        id: `territory-owner-avatar-${datum.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+        data: [datum],
+        mesh: datum.mesh,
+        texture: datum.texture,
+        getPosition: () => [0, 0, 0],
+        getColor: [255, 255, 255, 255],
+        sizeScale: 1,
+        coordinateSystem: COORDINATE_SYSTEM.LNGLAT,
+        pickable: false,
+        parameters: {
+          depthTest: false
+        } as Record<string, unknown>,
+        _instanced: false
+      })
+  )
+
 const layers = computed((): any[] => {
   const baseLayers: any[] = [createGeoLayer()]
+  if (territoryAvatarMeshes.value.length > 0) {
+    baseLayers.push(...createAvatarMeshLayers())
+  }
   if (showDefenseOverlay.value) {
     baseLayers.push(createDefenseLayer())
   }
@@ -806,6 +1047,7 @@ watch(
   [
     layers,
     territoryState,
+    territoryAvatarMeshes,
     defenseLabels,
     attackArrowMarkers,
     showDefenseOverlay,

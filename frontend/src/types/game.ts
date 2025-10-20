@@ -14,6 +14,7 @@ export interface PlayerSummary {
   id: string
   twitchUsername: string
   color: string | null
+  avatarUrl: string | null
   score: number
   territories: number
   isCurrent: boolean
@@ -52,7 +53,8 @@ export interface ReinforcementStats {
 export interface LegendEntry {
   id: string
   label: string
-  color: string
+  color?: string
+  avatarUrl?: string | null
 }
 
 export interface GameInfoItem {

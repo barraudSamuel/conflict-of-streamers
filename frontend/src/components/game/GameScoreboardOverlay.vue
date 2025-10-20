@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import {computed} from 'vue'
-import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card'
-import {ScrollArea} from '@/components/ui/scroll-area'
-import {Kbd} from '@/components/ui/kbd'
-import {Users, ScrollText} from 'lucide-vue-next'
-import type {ActionLogEntry, GameInfoItem, PlayerSummary} from '@/types/game'
+import { computed } from 'vue'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Kbd } from '@/components/ui/kbd'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Users, ScrollText } from 'lucide-vue-next'
+import type { ActionLogEntry, GameInfoItem, PlayerSummary } from '@/types/game'
 
 const props = defineProps<{
   gameInfoItems: GameInfoItem[]
@@ -70,10 +71,19 @@ const hasHistory = computed(() => props.actionHistory.length > 0)
                     :class="player.isCurrent ? 'ring-2 ring-primary/80' : ''"
                 >
                   <div class="flex items-center gap-3">
-                  <span
-                      class="size-3 rounded-full ring-2 ring-white/30"
-                      :style="{ backgroundColor: player.color || '#94a3b8' }"
-                  ></span>
+                    <Avatar class="size-9 border border-white/10">
+                      <AvatarImage
+                          v-if="player.avatarUrl"
+                          :src="player.avatarUrl"
+                          :alt="`Avatar de ${player.twitchUsername}`"
+                      />
+                      <AvatarFallback
+                          class="flex size-full items-center justify-center rounded-full text-xs font-semibold uppercase text-white"
+                          :style="player.color ? { backgroundColor: player.color } : undefined"
+                      >
+                        {{ player.twitchUsername?.charAt(0)?.toUpperCase() ?? 'J' }}
+                      </AvatarFallback>
+                    </Avatar>
                     <div class="flex flex-col">
                     <span class="text-sm font-semibold text-slate-100">
                       {{ player.twitchUsername }}

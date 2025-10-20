@@ -15,7 +15,7 @@ export default async function gameRoutes(fastify) {
                 return reply.code(400).send({ error: 'adminId and twitchUsername are required' });
             }
 
-            const game = GameManager.createGame(adminId, twitchUsername, settings);
+            const game = await GameManager.createGame(adminId, twitchUsername, settings);
             await TwitchService.syncGameChannels(game);
 
             return {
@@ -36,7 +36,7 @@ export default async function gameRoutes(fastify) {
                 return reply.code(400).send({ error: 'code, playerId, and twitchUsername are required' });
             }
 
-            const game = GameManager.joinGame(code, playerId, twitchUsername);
+            const game = await GameManager.joinGame(code, playerId, twitchUsername);
             await TwitchService.syncGameChannels(game);
 
             return {

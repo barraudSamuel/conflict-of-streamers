@@ -5,7 +5,7 @@ export const PLAYER_COLORS = [
 ];
 
 export class Player {
-    constructor(id, twitchUsername, color = null, isAdmin = false) {
+    constructor(id, twitchUsername, color = null, isAdmin = false, avatarUrl = null) {
         this.id = id;
         this.twitchUsername = twitchUsername;
         this.color = color || this.generateColor();
@@ -14,6 +14,7 @@ export class Player {
         this.territories = [];
         this.isConnected = true;
         this.isAdmin = isAdmin;
+        this.avatarUrl = avatarUrl;
         this.joinedAt = Date.now();
     }
 
@@ -30,6 +31,7 @@ export class Player {
             id: this.id,
             twitchUsername: this.twitchUsername,
             color: this.color,
+            avatarUrl: this.avatarUrl,
             score: this.score,
             isReady: this.isReady,
             territories: this.territories,

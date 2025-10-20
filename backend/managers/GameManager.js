@@ -8,11 +8,12 @@ class GameManager {
         this.playerToGame = new Map(); // playerId -> gameId
     }
 
-    createGame(adminId, twitchUsername, settings) {
+    async createGame(adminId, twitchUsername, settings) {
         const game = new Game(adminId, twitchUsername, settings);
-        const adminRecord = PlayerManager.createPlayer(adminId, twitchUsername);
+        const adminRecord = await PlayerManager.createPlayer(adminId, twitchUsername);
         const adminColor = adminRecord?.color;
-        const admin = new Player(adminId, twitchUsername, adminColor, true);
+        const adminAvatar = adminRecord?.avatarUrl ?? null;
+        const admin = new Player(adminId, twitchUsername, adminColor, true, adminAvatar);
         game.addPlayer(admin);
 
         this.games.set(game.id, game);
@@ -34,7 +35,7 @@ class GameManager {
         return gameId ? this.games.get(gameId) : null;
     }
 
-    joinGame(code, playerId, twitchUsername) {
+    async joinGame(code, playerId, twitchUsername) {
         const game = this.getGameByCode(code);
         if (!game) {
             throw new Error('Game not found');
@@ -46,9 +47,10 @@ class GameManager {
             throw new Error('Player already in another game');
         }
 
-        const playerRecord = PlayerManager.createPlayer(playerId, twitchUsername);
+        const playerRecord = await PlayerManager.createPlayer(playerId, twitchUsername);
         const playerColor = playerRecord?.color;
-        const player = new Player(playerId, twitchUsername, playerColor, false);
+        const playerAvatar = playerRecord?.avatarUrl ?? null;
+        const player = new Player(playerId, twitchUsername, playerColor, false, playerAvatar);
         game.addPlayer(player);
         this.playerToGame.set(playerId, game.id);
 

@@ -43,6 +43,7 @@ const {
   closeWinnerModal,
   visibleActionHistory,
   currentPlayerColor,
+  currentPlayerAvatar,
   otherPlayerLegendEntries,
   selectedOwnedTerritory,
   targetTerritory,
@@ -157,6 +158,7 @@ const goHome = () => {
 
         <GameLegend
             :current-player-color="currentPlayerColor"
+            :current-player-avatar="currentPlayerAvatar"
             :bot-color="BOT_LEGEND_COLOR"
             :other-entries="otherPlayerLegendEntries"
         />

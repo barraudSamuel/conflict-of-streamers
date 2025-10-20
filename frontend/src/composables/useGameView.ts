@@ -109,6 +109,7 @@ export const useGameView = (gameId: string) => {
       id: player.id,
       twitchUsername: player.twitchUsername ?? 'Joueur',
       color: player.color ?? null,
+      avatarUrl: typeof player.avatarUrl === 'string' ? player.avatarUrl : null,
       score: typeof player.score === 'number' ? player.score : 0,
       territories: counts[player.id] ?? 0,
       isCurrent: player.id === currentPlayerId.value,
@@ -252,20 +253,28 @@ export const useGameView = (gameId: string) => {
     return '#22c55e'
   })
 
+  const currentPlayerAvatar = computed(() => {
+    const player = playersById.value.get(currentPlayerId.value)
+    if (!player) {
+      return null
+    }
+    const raw = typeof player.avatarUrl === 'string' ? player.avatarUrl.trim() : ''
+    return raw ? raw : null
+  })
+
   const otherPlayerLegendEntries = computed<LegendEntry[]>(() => {
-    const seenColors = new Set<string>()
     const entries: LegendEntry[] = []
 
     playersSummary.value.forEach((player) => {
       if (player.isCurrent) return
+      if (isBotPlayer(player.id)) return
       const color =
         typeof player.color === 'string' && player.color.trim() !== '' ? player.color : '#94a3b8'
-      if (seenColors.has(color)) return
-      seenColors.add(color)
       entries.push({
         id: player.id,
         label: player.twitchUsername ?? 'Joueur',
-        color
+        color,
+        avatarUrl: player.avatarUrl ?? null
       })
     })
 
@@ -273,7 +282,8 @@ export const useGameView = (gameId: string) => {
       entries.push({
         id: 'others',
         label: 'Autres joueurs',
-        color: '#64748b'
+        color: '#64748b',
+        avatarUrl: null
       })
     }
 
@@ -1550,6 +1560,7 @@ export const useGameView = (gameId: string) => {
     closeWinnerModal,
     visibleActionHistory,
     currentPlayerColor,
+    currentPlayerAvatar,
     otherPlayerLegendEntries,
     selectedOwnedTerritory,
     targetTerritory,

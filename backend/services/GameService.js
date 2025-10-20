@@ -15,11 +15,11 @@ class GameService {
     async createGame(adminId, twitchUsername, settings = {}) {
         // Créer le joueur admin s'il n'existe pas
         if (!PlayerManager.playerExists(adminId)) {
-            PlayerManager.createPlayer(adminId, twitchUsername);
+            await PlayerManager.createPlayer(adminId, twitchUsername);
         }
 
         // Créer la partie
-        const game = GameManager.createGame(adminId, twitchUsername, settings);
+        const game = await GameManager.createGame(adminId, twitchUsername, settings);
 
         // Marquer le joueur comme online
         PlayerManager.setPlayerOnline(adminId, true);
@@ -42,11 +42,11 @@ class GameService {
 
         // Créer le joueur s'il n'existe pas
         if (!PlayerManager.playerExists(playerId)) {
-            PlayerManager.createPlayer(playerId, twitchUsername);
+            await PlayerManager.createPlayer(playerId, twitchUsername);
         }
 
         // Rejoindre la partie
-        const game = GameManager.joinGame(code, playerId, twitchUsername);
+        const game = await GameManager.joinGame(code, playerId, twitchUsername);
 
         // Marquer comme online
         PlayerManager.setPlayerOnline(playerId, true);

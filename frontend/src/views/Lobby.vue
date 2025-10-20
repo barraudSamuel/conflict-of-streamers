@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   getGame,
   startGame as startGameRequest,
@@ -1030,12 +1031,19 @@ const handleTerritorySelect = async (territoryId: string) => {
                     :class="isCurrentPlayer(player.id) ? 'border-primary/70 bg-primary/10' : 'border-transparent'"
                   >
                     <div class="flex items-center gap-3">
-                      <div
-                        class="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold"
-                        :style="{ backgroundColor: player.color }"
-                      >
-                        {{ (player.twitchUsername || 'P')[0].toUpperCase() }}
-                      </div>
+                      <Avatar class="h-10 w-10 border border-white/10">
+                        <AvatarImage
+                          v-if="player.avatarUrl"
+                          :src="player.avatarUrl"
+                          :alt="`Avatar de ${player.twitchUsername}`"
+                        />
+                        <AvatarFallback
+                          class="flex size-full items-center justify-center rounded-full text-sm font-semibold uppercase text-white"
+                          :style="player.color ? { backgroundColor: player.color } : undefined"
+                        >
+                          {{ (player.twitchUsername || 'P')[0].toUpperCase() }}
+                        </AvatarFallback>
+                      </Avatar>
                       <div class="flex-1">
                         <div class="flex items-center gap-2">
                           <span class="font-semibold">{{ player.twitchUsername }}</span>

@@ -1,4 +1,5 @@
 import { Player, PLAYER_COLORS } from '../models/Player.js';
+import { getTwitchAvatar } from '../utils/picture-profile.js';
 
 function generateRandomHexColor() {
     return '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0').toUpperCase();
@@ -11,11 +12,14 @@ class PlayerManager {
         this.onlinePlayers = new Set(); // playerIds actuellement connectés
     }
 
-    createPlayer(playerId, twitchUsername, color = null) {
+    async createPlayer(playerId, twitchUsername, color = null) {
+        const normalizedUsername = typeof twitchUsername === 'string' ? twitchUsername.trim() : '';
+        const lookupKey = normalizedUsername.toLowerCase();
+
         if (this.players.has(playerId)) {
             const existing = this.players.get(playerId);
-            const normalizedUsername = twitchUsername?.toLowerCase();
-            if (existing?.twitchUsername && existing.twitchUsername.toLowerCase() !== normalizedUsername) {
+            const existingUsername = existing?.twitchUsername ? existing.twitchUsername.toLowerCase() : null;
+            if (existingUsername && existingUsername !== lookupKey) {
                 this.twitchToPlayer.delete(existing.twitchUsername.toLowerCase());
             }
 
@@ -25,19 +29,38 @@ class PlayerManager {
                 existing.color = this.assignColor(color || existing.color, playerId);
             }
 
-            if (normalizedUsername) {
-                this.twitchToPlayer.set(normalizedUsername, playerId);
+            if (lookupKey) {
+                this.twitchToPlayer.set(lookupKey, playerId);
+                const shouldRefreshAvatar = !existing.avatarUrl || existingUsername !== lookupKey;
+                if (shouldRefreshAvatar) {
+                    try {
+                        const avatarUrl = await getTwitchAvatar(normalizedUsername);
+                        if (avatarUrl) {
+                            existing.avatarUrl = avatarUrl;
+                        }
+                    } catch (error) {
+                        // Silently ignore avatar fetch issues to avoid blocking player creation
+                    }
+                }
             }
 
             return existing;
         }
 
-        const normalizedUsername = twitchUsername?.toLowerCase();
         const assignedColor = this.assignColor(color);
-        const player = new Player(playerId, twitchUsername, assignedColor);
+        let avatarUrl = null;
+        if (lookupKey) {
+            try {
+                avatarUrl = await getTwitchAvatar(normalizedUsername);
+            } catch (error) {
+                avatarUrl = null;
+            }
+        }
+
+        const player = new Player(playerId, twitchUsername, assignedColor, false, avatarUrl);
         this.players.set(playerId, player);
-        if (normalizedUsername) {
-            this.twitchToPlayer.set(normalizedUsername, playerId);
+        if (lookupKey) {
+            this.twitchToPlayer.set(lookupKey, playerId);
         }
 
         return player;
@@ -250,7 +273,7 @@ class PlayerManager {
     }
 
     // Importer les données des joueurs (pour persistance)
-    importPlayerData(data) {
+    async importPlayerData(data) {
         if (!data || !data.players) return;
 
         for (let entry of data.players) {
@@ -259,7 +282,7 @@ class PlayerManager {
                 continue;
             }
 
-            const player = this.createPlayer(playerData.id, playerData.twitchUsername, playerData.color);
+            const player = await this.createPlayer(playerData.id, playerData.twitchUsername, playerData.color);
             player.score = playerData.score || 0;
             player.isReady = playerData.isReady || false;
             player.territories = playerData.territories || [];

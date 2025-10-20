@@ -1,19 +1,32 @@
 # Repository Guidelines
 
+Fast navigation and consistent workflows keep delivery quick. Use this guide to onboard new contributors and align ongoing work across the backend Fastify service and the Vue frontend.
+
 ## Project Structure & Module Organization
-`backend/` holds the Fastify API and websocket layer: HTTP handlers in `backend/routes/`, domain logic in `backend/services/` and `backend/managers/`, seed data in `backend/data/`, and realtime glue in `backend/websocket/socketHandler.js`. `frontend/` is a Vite + Vue 3 TypeScript app; entrypoints live in `frontend/src/main.ts` and `frontend/src/App.vue`, routed screens in `frontend/src/views/`, shared helpers in `frontend/src/lib/`, and HTTP calls in `frontend/src/services/api.ts`. Consult `TWITCH_INTEGRATION.md` for platform credentials.
+- `backend/` hosts the Fastify API, websocket glue, domain services, and sample data. Route handlers live in `backend/routes/`, with companion logic in `backend/services/` and `backend/managers/`. Realtime utilities are in `backend/websocket/socketHandler.js`.
+- `frontend/` contains the Vite + Vue 3 application. Entrypoints sit in `frontend/src/main.ts` and `frontend/src/App.vue`, routed screens under `frontend/src/views/`, shared helpers inside `frontend/src/lib/`, and HTTP clients in `frontend/src/services/`.
 
 ## Build, Test & Development Commands
-Install dependencies per workspace: `cd backend && npm install`, `cd frontend && npm install`. Run `npm run dev` in each directory to start the Fastify API on port 3000 and the Vite dev server on port 5173. Build the frontend with `npm run build` to populate `frontend/dist/`. Use `npm start` in `backend/` for production-like runs once your `.env` is in place. The backend `npm test` script is currently a stub.
+- `cd backend && npm install` / `cd frontend && npm install` — install workspace dependencies.
+- `npm run dev` (run from backend or frontend) — start the Fastify API on port 3000 and the Vite dev server on port 5173.
+- `cd frontend && npm run build` — emit production assets into `frontend/dist/`.
+- `cd backend && npm start` — run the API with production-like settings once `.env` is configured.
+- `npm test` — reserved as the unified entry point; wire new test suites to this script.
 
 ## Coding Style & Naming Conventions
-Backend code uses ECMAScript modules, 4-space indentation, single quotes, and camelCase (`setupWebSocket`). Group related handlers within `routes/` and keep services pure so they can be reused in websocket flows. Frontend code follows Vue SFC conventions: PascalCase component filenames (`Lobby.vue`), `<script setup lang="ts">`, and Tailwind utility classes in scoped style blocks. Place cross-cutting helpers in `src/lib/` and remote calls in `src/services/`.
+- Backend uses ECMAScript modules, 4-space indentation, single quotes, and camelCase (e.g., `setupWebSocket`). Group related HTTP handlers by route file.
+- Frontend favors Vue SFCs with `PascalCase.vue` filenames, `<script setup lang="ts">`, scoped styles, and Tailwind utility classes.
+- House shared helpers in `src/lib/` and keep remote calls in `src/services/api.ts` to simplify reuse between routes and websocket flows.
 
 ## Testing Guidelines
-No automated suite exists yet. Add backend integration tests under `backend/tests/` using Fastify’s inject helpers or supertest-style assertions, and frontend unit tests under `frontend/src/__tests__/` with Vitest. Update the relevant `package.json` scripts so `npm test` becomes the single entry point, and version any new fixtures alongside `backend/data/`.
+- Add backend integration tests under `backend/tests/` using Fastify inject helpers or Supertest-style assertions.
+- Keep frontend unit tests in `frontend/src/__tests__/` with Vitest. Mirror component or service names in test filenames.
+- Ensure each workspace wires its tests into `npm test` so CI can execute a single command.
 
 ## Commit & Pull Request Guidelines
-Existing history uses concise, imperative subject lines (e.g., “Add backend game routes…”). Keep subjects ≤72 characters, and add a body describing motivation or validation when it prevents back-and-forth. Pull requests should outline the change, list impacted routes or views, link issues, and include verification steps (commands, URLs, screenshots). Flag schema or API changes early so both tiers stay in sync.
+- Write concise, imperative commit subjects ≤72 characters (e.g., “Add backend game routes”). Add bodies when context or validation steps prevent rework.
+- Pull requests should outline the change set, list impacted routes or views, link issues, and include verification steps (commands, URLs, screenshots). Flag schema or API shifts early to keep both tiers synchronized.
 
-## Configuration & Environment
-Secrets and runtime settings belong in `.env` files that stay out of Git. Define `PORT`, `FRONTEND_URL`, and any Twitch credentials described in `TWITCH_INTEGRATION.md`. Never commit real tokens; if you add new keys, update the example config and use unique local values to avoid collisions with production bots.
+## Security & Configuration Tips
+- Store secrets and runtime configuration in `.env` files kept out of Git. Define `PORT`, `FRONTEND_URL`, and Twitch credentials per `TWITCH_INTEGRATION.md`.
+- Provide safe example values when introducing new keys, and avoid sharing production tokens in discussion threads.
