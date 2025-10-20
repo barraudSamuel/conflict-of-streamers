@@ -430,27 +430,17 @@ const sanitizeRing = (ring: number[][]): Coordinate2D[] => {
   return coords
 }
 
-const ringArea = (ring: Coordinate2D[]): number => {
-  if (ring.length < 3) return 0
-  let sum = 0
-  for (let i = 0; i < ring.length; i += 1) {
-    const [x1, y1] = ring[i]
-    const [x2, y2] = ring[(i + 1) % ring.length]
-    sum += x1 * y2 - x2 * y1
-  }
-  return Math.abs(sum) * 0.5
-}
-
-const selectPrimaryPolygon = (feature: LobbyTerritoryFeature): Coordinate2D[][] => {
+const gatherPolygons = (feature: LobbyTerritoryFeature): Coordinate2D[][][] => {
   const geometry = feature.geometry
   if (!geometry) {
     return []
   }
 
   if (geometry.type === 'Polygon') {
-    return geometry.coordinates
+    const rings = geometry.coordinates
       .map((ring) => sanitizeRing(ring as number[][]))
       .filter((ring) => ring.length >= 3)
+    return rings.length ? [rings] : []
   }
 
   if (geometry.type === 'MultiPolygon') {
@@ -462,17 +452,7 @@ const selectPrimaryPolygon = (feature: LobbyTerritoryFeature): Coordinate2D[][] 
       )
       .filter((rings) => rings.length > 0)
 
-    if (!candidates.length) {
-      return []
-    }
-
-    candidates.sort((a, b) => {
-      const areaA = ringArea(a[0])
-      const areaB = ringArea(b[0])
-      return areaB - areaA
-    })
-
-    return candidates[0]
+    return candidates
   }
 
   return []
@@ -504,37 +484,26 @@ const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
       return
     }
 
-    const rings = selectPrimaryPolygon(feature)
-    if (!rings.length) {
+    const polygons = gatherPolygons(feature)
+    if (!polygons.length) {
       return
     }
 
-    const flattened: number[] = []
-    const holeIndices: number[] = []
-    let vertexCount = 0
     let minLon = Number.POSITIVE_INFINITY
     let minLat = Number.POSITIVE_INFINITY
     let maxLon = Number.NEGATIVE_INFINITY
     let maxLat = Number.NEGATIVE_INFINITY
 
-    rings.forEach((ring, ringIndex) => {
-      if (ring.length < 3) return
-      if (ringIndex > 0) {
-        holeIndices.push(vertexCount)
-      }
-      ring.forEach(([lon, lat]) => {
-        flattened.push(lon, lat)
-        vertexCount += 1
-        if (lon < minLon) minLon = lon
-        if (lon > maxLon) maxLon = lon
-        if (lat < minLat) minLat = lat
-        if (lat > maxLat) maxLat = lat
+    polygons.forEach((rings) => {
+      rings.forEach((ring) => {
+        ring.forEach(([lon, lat]) => {
+          if (lon < minLon) minLon = lon
+          if (lon > maxLon) maxLon = lon
+          if (lat < minLat) minLat = lat
+          if (lat > maxLat) maxLat = lat
+        })
       })
     })
-
-    if (vertexCount < 3) {
-      return
-    }
 
     const width = maxLon - minLon
     const height = maxLat - minLat
@@ -542,45 +511,67 @@ const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
       return
     }
 
-    const indices = earcut(flattened, holeIndices, 2)
-    if (!indices || indices.length === 0) {
-      return
-    }
-
-    const positions = new Float32Array(vertexCount * 3)
-    const texCoords = new Float32Array(vertexCount * 2)
     const scale = Math.max(width, height)
     const widthNorm = width / scale
     const heightNorm = height / scale
     const uOffset = (1 - widthNorm) * 0.5
     const vOffset = (1 - heightNorm) * 0.5
 
-    for (let i = 0; i < vertexCount; i += 1) {
-      const lon = flattened[i * 2]
-      const lat = flattened[i * 2 + 1]
-      positions[i * 3] = lon
-      positions[i * 3 + 1] = lat
-      positions[i * 3 + 2] = 0
+    polygons.forEach((rings, polygonIndex) => {
+      const flattened: number[] = []
+      const holeIndices: number[] = []
+      let vertexCount = 0
 
-      const u = ((lon - minLon) / scale + uOffset) || 0
-      const v = ((lat - minLat) / scale + vOffset) || 0
-      texCoords[i * 2] = Math.min(1, Math.max(0, u))
-      texCoords[i * 2 + 1] = 1 - Math.min(1, Math.max(0, v))
-    }
+      rings.forEach((ring, ringIndex) => {
+        if (ring.length < 3) return
+        if (ringIndex > 0) {
+          holeIndices.push(vertexCount)
+        }
+        ring.forEach(([lon, lat]) => {
+          flattened.push(lon, lat)
+          vertexCount += 1
+        })
+      })
 
-    const indexArray =
-      vertexCount > 65535 ? new Uint32Array(indices) : new Uint16Array(indices)
+      if (vertexCount < 3) {
+        return
+      }
 
-    meshes.push({
-      id: `${territory.id ?? feature.properties?.id ?? 'unknown'}:${ownerId}`,
-      mesh: {
-        attributes: {
-          POSITION: { size: 3, value: positions },
-          TEXCOORD_0: { size: 2, value: texCoords }
+      const indices = earcut(flattened, holeIndices, 2)
+      if (!indices || indices.length === 0) {
+        return
+      }
+
+      const positions = new Float32Array(vertexCount * 3)
+      const texCoords = new Float32Array(vertexCount * 2)
+
+      for (let i = 0; i < vertexCount; i += 1) {
+        const lon = flattened[i * 2]
+        const lat = flattened[i * 2 + 1]
+        positions[i * 3] = lon
+        positions[i * 3 + 1] = lat
+        positions[i * 3 + 2] = 0
+
+        const u = ((lon - minLon) / scale + uOffset) || 0
+        const v = ((lat - minLat) / scale + vOffset) || 0
+        texCoords[i * 2] = Math.min(1, Math.max(0, u))
+        texCoords[i * 2 + 1] = 1 - Math.min(1, Math.max(0, v))
+      }
+
+      const indexArray =
+        vertexCount > 65535 ? new Uint32Array(indices) : new Uint16Array(indices)
+
+      meshes.push({
+        id: `${territory.id ?? feature.properties?.id ?? 'unknown'}:${ownerId}:${polygonIndex}`,
+        mesh: {
+          attributes: {
+            POSITION: { size: 3, value: positions },
+            TEXCOORD_0: { size: 2, value: texCoords }
+          },
+          indices: { size: 1, value: indexArray }
         },
-        indices: { size: 1, value: indexArray }
-      },
-      texture: avatarUrl
+        texture: avatarUrl
+      })
     })
   })
 
