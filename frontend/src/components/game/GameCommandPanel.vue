@@ -59,7 +59,6 @@ const {
   currentAttackEncouragement,
   defendingEncouragement,
   attackCommandLabel,
-  defenseCommandLabel,
   reinforcementCommandLabel,
   attackWindowLabel,
   reinforcementWindowLabel,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { COORDINATE_SYSTEM, Deck } from '@deck.gl/core'
-import type { PickingInfo } from '@deck.gl/core'
+import type { Color, PickingInfo } from '@deck.gl/core'
 import { GeoJsonLayer, TextLayer } from '@deck.gl/layers'
 import { SimpleMeshLayer } from '@deck.gl/mesh-layers'
 import {
@@ -17,6 +17,8 @@ interface LobbyTerritory {
   defensePower?: number | null
   code?: string | null
   name?: string | null
+  isReinforced?: boolean | null
+  reinforcementBonus?: number | null
 }
 
 interface LobbyPlayer {
@@ -75,19 +77,28 @@ const showDefenseOverlay = computed(() => mapAppearance.value === 'game')
 const showAttackOverlay = computed(() => mapAppearance.value === 'game')
 const viewZoom = ref(initialViewState.zoom)
 
-const DEFAULT_AVAILABLE_COLOR: [number, number, number, number] = [71, 85, 105, 130]
-const DEFAULT_OCCUPIED_COLOR: [number, number, number, number] = [148, 163, 184, 210]
-const DEFAULT_BORDER_COLOR: [number, number, number, number] = [30, 41, 59, 220]
-const CURRENT_PLAYER_BORDER_COLOR: [number, number, number, number] = [226, 232, 240, 255]
-const CURRENT_PLAYER_FALLBACK_COLOR: [number, number, number, number] = [34, 197, 94, 220]
+const DEFAULT_AVAILABLE_COLOR: Color = [71, 85, 105, 130]
+const DEFAULT_OCCUPIED_COLOR: Color = [148, 163, 184, 210]
+const DEFAULT_BORDER_COLOR: Color = [30, 41, 59, 220]
+const CURRENT_PLAYER_BORDER_COLOR: Color = [226, 232, 240, 255]
+const CURRENT_PLAYER_FALLBACK_COLOR: Color = [34, 197, 94, 220]
 const BOT_OWNER_PREFIX = 'bot:'
 const BOT_OWNER_COLOR = '#64748b'
-const BOT_HIGHLIGHT_COLOR: [number, number, number, number] = [100, 116, 139, 210]
-const ATTACK_ARROW_COLOR: [number, number, number, number] = [239, 68, 68, 235]
+const BOT_HIGHLIGHT_COLOR: Color = [100, 116, 139, 210]
+const ATTACK_ARROW_COLOR: Color = [239, 68, 68, 235]
 const ATTACK_ARROW_SIZE_MIN = 14
 const ATTACK_ARROW_SIZE_MAX = 30
 const BORDER_DISTANCE_EPSILON = 1e-6
 const MIN_POLYGON_EXTENT = 1e-6
+
+const toColorTuple = (color: Color): [number, number, number, number] => {
+  if (Array.isArray(color)) {
+    const [r = 0, g = 0, b = 0, a = 255] = color
+    return [r, g, b, a]
+  }
+  const [r = 0, g = 0, b = 0, a = 255] = Array.from(color)
+  return [r, g, b, a]
+}
 
 interface DefenseLabelDatum {
   position: [number, number]
@@ -420,9 +431,14 @@ const sanitizeRing = (ring: number[][]): Coordinate2D[] => {
   })
 
   if (coords.length >= 2) {
-    const [firstLon, firstLat] = coords[0]
-    const [lastLon, lastLat] = coords[coords.length - 1]
-    if (Math.abs(firstLon - lastLon) < 1e-9 && Math.abs(firstLat - lastLat) < 1e-9) {
+    const first = coords[0]
+    const last = coords[coords.length - 1]
+    if (
+      first &&
+      last &&
+      Math.abs(first[0] - last[0]) < 1e-9 &&
+      Math.abs(first[1] - last[1]) < 1e-9
+    ) {
       coords.pop()
     }
   }
@@ -546,8 +562,10 @@ const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
       const texCoords = new Float32Array(vertexCount * 2)
 
       for (let i = 0; i < vertexCount; i += 1) {
-        const lon = flattened[i * 2]
-        const lat = flattened[i * 2 + 1]
+        const lonIndex = i * 2
+        const latIndex = lonIndex + 1
+        const lon = flattened[lonIndex] ?? 0
+        const lat = flattened[latIndex] ?? 0
         positions[i * 3] = lon
         positions[i * 3 + 1] = lat
         positions[i * 3 + 2] = 0
@@ -727,9 +745,9 @@ featureCollection.features.forEach((feature) => {
   }
 })
 
-const hexToRgba = (hex: string | null | undefined, alpha: number): [number, number, number, number] => {
+const hexToRgba = (hex: string | null | undefined, alpha: number): Color => {
   if (!hex) {
-    return [...DEFAULT_OCCUPIED_COLOR.slice(0, 3), alpha] as [number, number, number, number]
+    return [...DEFAULT_OCCUPIED_COLOR.slice(0, 3), alpha] as Color
   }
 
   let parsed = hex.replace('#', '')
@@ -742,7 +760,7 @@ const hexToRgba = (hex: string | null | undefined, alpha: number): [number, numb
   }
 
   if (parsed.length !== 6) {
-    return [...DEFAULT_OCCUPIED_COLOR.slice(0, 3), alpha] as [number, number, number, number]
+    return [...DEFAULT_OCCUPIED_COLOR.slice(0, 3), alpha] as Color
   }
 
   const bigint = Number.parseInt(parsed, 16)
@@ -750,10 +768,10 @@ const hexToRgba = (hex: string | null | undefined, alpha: number): [number, numb
   const g = (bigint >> 8) & 255
   const b = bigint & 255
 
-  return [r, g, b, alpha]
+  return [r, g, b, alpha] as Color
 }
 
-const computeFillColor = (feature: DeckFeature) => {
+const computeFillColor = (feature: DeckFeature): Color => {
   const territoryId = feature.properties?.id
   if (!territoryId) {
     return DEFAULT_AVAILABLE_COLOR
@@ -765,60 +783,59 @@ const computeFillColor = (feature: DeckFeature) => {
   }
 
   const isBot = info.isBot
-  const baseColor = isBot ? hexToRgba(info.ownerColor, 210) : DEFAULT_OCCUPIED_COLOR
-
   if (info.ownerId === props.currentPlayerId) {
     if (isBot) {
-      const botColor = hexToRgba(info.ownerColor, info.isReinforced ? 255 : 235)
+      const botColor = toColorTuple(hexToRgba(info.ownerColor, info.isReinforced ? 255 : 235))
       if (info.isReinforced) {
         return [
           Math.min(255, botColor[0] + 10),
           Math.min(255, botColor[1] + 14),
           Math.min(255, botColor[2] + 18),
           botColor[3]
-        ]
+        ] as Color
       }
-      return botColor
+      return botColor as Color
     }
 
-    const highlight = [...CURRENT_PLAYER_FALLBACK_COLOR] as [number, number, number, number]
+    const highlight = toColorTuple(CURRENT_PLAYER_FALLBACK_COLOR)
     if (info.isReinforced) {
       return [
         Math.min(255, highlight[0] + 12),
         Math.min(255, highlight[1] + 18),
         Math.min(255, highlight[2] + 16),
         highlight[3]
-      ]
+      ] as Color
     }
-    return highlight
+    return highlight as Color
   }
 
   if (isBot) {
-    const botColor = hexToRgba(info.ownerColor, info.isReinforced ? 235 : 210)
+    const botColor = toColorTuple(hexToRgba(info.ownerColor, info.isReinforced ? 235 : 210))
     if (info.isReinforced) {
       return [
         Math.min(255, botColor[0] + 8),
         Math.min(255, botColor[1] + 12),
         Math.min(255, botColor[2] + 16),
         botColor[3]
-      ]
+      ] as Color
     }
-    return botColor
+    return botColor as Color
   }
 
   if (info.isReinforced) {
+    const baseColor = toColorTuple(DEFAULT_OCCUPIED_COLOR)
     return [
       Math.min(255, baseColor[0] + 6),
       Math.min(255, baseColor[1] + 18),
       Math.min(255, baseColor[2] + 28),
       baseColor[3]
-    ]
+    ] as Color
   }
 
-  return baseColor
+  return DEFAULT_OCCUPIED_COLOR
 }
 
-const computeLineColor = (feature: DeckFeature) => {
+const computeLineColor = (feature: DeckFeature): Color => {
   const territoryId = feature.properties?.id
   if (!territoryId) {
     return DEFAULT_BORDER_COLOR
@@ -945,7 +962,7 @@ const createAttackArrowLayer = () =>
     billboard: false,
     getPosition: (item) => item.position,
     getText: () => '➤',
-    getColor: () => ATTACK_ARROW_COLOR,
+    getColor: (): Color => ATTACK_ARROW_COLOR,
     getSize: () => attackArrowSize.value,
     sizeUnits: 'pixels',
     sizeMinPixels: Math.max(10, attackArrowSize.value - 6),

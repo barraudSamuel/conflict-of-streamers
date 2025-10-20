@@ -329,11 +329,6 @@ export const useGameView = (gameId: string) => {
   const lastClickedIsOwned = computed(
     () => lastClickedTerritory.value?.ownerId === currentPlayerId.value
   )
-  const lastClickedIsTarget = computed(() => {
-    const target = targetTerritory.value
-    return !!target && target.id === lastClickedTerritory.value?.id
-  })
-
   const showAttackActions = computed(() => {
     const target = targetTerritory.value
     if (!target) return false
