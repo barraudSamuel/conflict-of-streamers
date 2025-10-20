@@ -1,13 +1,28 @@
-
 import fetch from 'node-fetch';
 
 const TWITCH_TRACKER_BASE_URL = 'https://twitchtracker.com';
 const AVATAR_CACHE_TTL = 1000 * 60 * 30; // 30 minutes
+const AVATAR_SIZE_TARGET = 600;
+const AVATAR_SIZE_REGEX = /(-profile_image-)(\d+)x(\d+)(\.\w{3,4})(?:\?.*)?$/i;
 
 const avatarCache = new Map();
 
 const buildProfileUrl = (username) =>
   `${TWITCH_TRACKER_BASE_URL}/${encodeURIComponent(username)}`;
+
+function normalizeAvatarUrl(url) {
+  if (typeof url !== 'string') {
+    return url;
+  }
+
+  return url.replace(AVATAR_SIZE_REGEX, (_, prefix, width, height, extension) => {
+    const target = `${AVATAR_SIZE_TARGET}x${AVATAR_SIZE_TARGET}`;
+    if (width === String(AVATAR_SIZE_TARGET) && height === String(AVATAR_SIZE_TARGET)) {
+      return `${prefix}${target}${extension}`;
+    }
+    return `${prefix}${target}${extension}`;
+  });
+}
 
 export async function getTwitchAvatar(username) {
   if (typeof username !== 'string') {
@@ -41,7 +56,8 @@ export async function getTwitchAvatar(username) {
     }
 
     const [_, src] = match;
-    const resolvedUrl = src.startsWith('http') ? src : `${TWITCH_TRACKER_BASE_URL}${src}`;
+    const absoluteUrl = src.startsWith('http') ? src : `${TWITCH_TRACKER_BASE_URL}${src}`;
+    const resolvedUrl = normalizeAvatarUrl(absoluteUrl);
     avatarCache.set(cacheKey, { url: resolvedUrl, fetchedAt: now });
 
     return resolvedUrl;
