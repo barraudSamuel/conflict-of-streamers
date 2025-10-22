@@ -31,6 +31,7 @@ const getInitials = (supporter: SupporterLike) => {
         v-for="(supporter, index) in supporters"
         :key="supporter.id || supporter.username || supporter.displayName || `supporter-${index}`"
         class="relative"
+        :style="{ zIndex: supporters.length - index }"
     >
       <Avatar class="h-10 w-10 border border-white/10 ring-2 ring-slate-900/60">
         <AvatarImage
