@@ -16,6 +16,7 @@ import type {
   ActionLogEntry,
   ActionLogFragment,
   AttackResult,
+  AttackParticipantSummary,
   BattleBalance,
   GameInfoItem,
   LegendEntry,
@@ -29,6 +30,35 @@ export const BOT_LEGEND_COLOR = '#64748b'
 const DEFAULT_PLAYER_LOG_COLOR = '#cbd5f5'
 const MAX_ACTION_HISTORY = 15
 const ACTION_HISTORY_VISIBILITY_MS = 10_000
+
+const normalizeParticipantSummary = (entry: any): AttackParticipantSummary => {
+  const id =
+    typeof entry?.id === 'string' && entry.id.trim() !== '' ? entry.id.trim() : null
+  const username =
+    typeof entry?.username === 'string' && entry.username.trim() !== ''
+      ? entry.username.trim()
+      : null
+  const displayName =
+    typeof entry?.displayName === 'string' && entry.displayName.trim() !== ''
+      ? entry.displayName.trim()
+      : username ?? id
+  const avatarUrl =
+    typeof entry?.avatarUrl === 'string' && entry.avatarUrl.trim() !== ''
+      ? entry.avatarUrl.trim()
+      : null
+  const messages =
+    typeof entry?.messages === 'number' && Number.isFinite(entry.messages)
+      ? entry.messages
+      : 0
+
+  return {
+    id,
+    username,
+    displayName: displayName ?? 'Viewer',
+    avatarUrl,
+    messages
+  }
+}
 
 export const useGameView = (gameId: string) => {
   const router = useRouter()
@@ -450,6 +480,12 @@ export const useGameView = (gameId: string) => {
         : Array.isArray(attack.participantAttackers)
           ? attack.participantAttackers.length
           : 0
+    const topAttackers = Array.isArray(attack.topContributors?.attackers)
+      ? attack.topContributors.attackers.map(normalizeParticipantSummary)
+      : []
+    const topDefenders = Array.isArray(attack.topContributors?.defenders)
+      ? attack.topContributors.defenders.map(normalizeParticipantSummary)
+      : []
 
     return {
       attack,
@@ -458,7 +494,9 @@ export const useGameView = (gameId: string) => {
       participants: attackerCount,
       attackPoints: Number(attack.attackPoints) || 0,
       defensePoints: Number(attack.defensePoints) || 0,
-      baseDefense: Number(attack.baseDefense) || 0
+      baseDefense: Number(attack.baseDefense) || 0,
+      topAttackers,
+      topDefenders
     }
   })
 
@@ -507,6 +545,12 @@ export const useGameView = (gameId: string) => {
         : Array.isArray(attack.participantDefenders)
           ? attack.participantDefenders.length
           : 0
+    const topAttackers = Array.isArray(attack.topContributors?.attackers)
+      ? attack.topContributors.attackers.map(normalizeParticipantSummary)
+      : []
+    const topDefenders = Array.isArray(attack.topContributors?.defenders)
+      ? attack.topContributors.defenders.map(normalizeParticipantSummary)
+      : []
 
     return {
       attack,
@@ -515,7 +559,9 @@ export const useGameView = (gameId: string) => {
       participants: defenderCount,
       attackPoints: Number(attack.attackPoints) || 0,
       defensePoints: Number(attack.defensePoints) || 0,
-      baseDefense: Number(attack.baseDefense) || 0
+      baseDefense: Number(attack.baseDefense) || 0,
+      topAttackers,
+      topDefenders
     }
   })
 

@@ -31,6 +31,14 @@ export interface BattleBalance {
   defensePercent: number
 }
 
+export interface AttackParticipantSummary {
+  id: string | null
+  username: string | null
+  displayName: string | null
+  avatarUrl: string | null
+  messages: number
+}
+
 export interface AttackStats {
   attack: any
   remaining: number
@@ -39,6 +47,8 @@ export interface AttackStats {
   attackPoints: number
   defensePoints: number
   baseDefense: number
+  topAttackers: AttackParticipantSummary[]
+  topDefenders: AttackParticipantSummary[]
 }
 
 export interface ReinforcementStats {
