@@ -2,8 +2,9 @@
 import {computed, toRefs} from 'vue'
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card'
 import {Button} from '@/components/ui/button'
-import {Avatar, AvatarFallback, AvatarImage} from '@/components/ui/avatar'
 import {Swords, OctagonX, Shield, OctagonMinus} from 'lucide-vue-next'
+import GameCommandCenterCard from '@/components/game/GameCommandCenterCard.vue'
+import GameCommandSideCard from '@/components/game/GameCommandSideCard.vue'
 import type {
   AttackResult,
   AttackStats,
@@ -322,133 +323,60 @@ const showReinforcementWarning = computed(
       <template v-if="currentAttackStats">
         <div class="space-y-8">
           <div class="grid items-start gap-8 md:grid-cols-[minmax(0,1fr)_minmax(16rem,24rem)_minmax(0,1fr)]">
-            <div class="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
-              <div>
-                <p class="text-sm uppercase tracking-[0.3em] text-slate-400">Attaque</p>
-                <p class="text-2xl font-semibold text-slate-100">
-                  {{ getPlayerUsername(currentAttack?.attackerId) ?? 'Vos troupes' }}
-                </p>
-                <p class="text-sm text-slate-400">
-                  Depuis {{ currentAttack?.fromTerritoryName ?? currentAttack?.fromTerritory ?? 'Territoire' }}
-                </p>
+            <GameCommandSideCard
+                title="Attaque"
+                :name="getPlayerUsername(currentAttack?.attackerId) ?? 'Vos troupes'"
+                :subtitle="`Depuis ${currentAttack?.fromTerritoryName ?? currentAttack?.fromTerritory ?? 'Territoire'}`"
+                :supporters="currentAttackStats.topAttackers ?? []"
+                :overflow-count="attackOverflowCount"
+            >
+              <div class="flex items-center justify-between text-sm text-slate-400">
+                <span>Puissance attaque</span>
+                <span class="text-lg font-semibold text-slate-100">{{ currentAttackStats.attackPoints }}</span>
               </div>
-              <div class="flex items-center gap-2">
-                <div class="flex -space-x-2">
-                  <div
-                      v-for="(supporter, index) in currentAttackStats.topAttackers"
-                      :key="supporter.id || supporter.username || supporter.displayName || `attack-supporter-${index}`"
-                      class="relative"
-                  >
-                    <Avatar class="h-10 w-10 border border-white/10 ring-2 ring-slate-900/60">
-                      <AvatarImage
-                          v-if="supporter.avatarUrl"
-                          :src="supporter.avatarUrl"
-                          :alt="`Avatar de ${supporter.displayName || supporter.username || 'viewer'}`"
-                      />
-                      <AvatarFallback class="flex size-full items-center justify-center rounded-full bg-slate-700 text-xs font-semibold uppercase text-slate-200">
-                        {{ (supporter.displayName || supporter.username || '??').slice(0, 2).toUpperCase() }}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span
-                        v-if="supporter.messages > 1"
-                        class="absolute -bottom-1 -right-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-slate-900"
-                    >
-                      x{{ supporter.messages }}
-                    </span>
-                  </div>
-                </div>
-                <span
-                    v-if="attackOverflowCount > 0"
-                    class="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-slate-800 text-xs font-semibold text-slate-200"
-                >
-                  +{{ attackOverflowCount }}
-                </span>
+              <div class="relative h-5 w-full overflow-hidden rounded-full bg-slate-800/80">
+                <div
+                    class="absolute inset-y-0 left-0 rounded-r-full bg-primary transition-all duration-500"
+                    :style="{ width: `${Math.max(4, currentAttackBalance.attackPercent)}%` }"
+                ></div>
               </div>
-              <div class="space-y-3">
-                <div class="flex items-center justify-between text-sm text-slate-400">
-                  <span>Puissance attaque</span>
-                  <span class="text-lg font-semibold text-slate-100">{{ currentAttackStats.attackPoints }}</span>
-                </div>
-                <div class="relative h-5 w-full overflow-hidden rounded-full bg-slate-800/80">
-                  <div
-                      class="absolute inset-y-0 left-0 rounded-r-full bg-primary transition-all duration-500"
-                      :style="{ width: `${Math.max(4, currentAttackBalance.attackPercent)}%` }"
-                  ></div>
-                </div>
-                <p class="text-sm text-slate-400">
-                  {{ currentAttackStats.messages }} message<span v-if="currentAttackStats.messages !== 1">s</span>
-                  • {{ currentAttackStats.participants }} supporter<span v-if="currentAttackStats.participants !== 1">s</span>
-                </p>
+              <p class="text-sm text-slate-400">
+                {{ currentAttackStats.messages }} message<span v-if="currentAttackStats.messages !== 1">s</span>
+                • {{ currentAttackStats.participants }} supporter<span v-if="currentAttackStats.participants !== 1">s</span>
+              </p>
+            </GameCommandSideCard>
+            <GameCommandCenterCard
+                :countdown="formatDuration(currentAttackStats.remaining)"
+                :encouragement="currentAttackEncouragement"
+                encouragement-class="text-primary/80"
+            />
+            <GameCommandSideCard
+                title="Défense"
+                align="right"
+                :name="getPlayerUsername(currentAttack?.defenderId) ?? 'Défenseur'"
+                :subtitle="`Sur ${currentAttack?.toTerritoryName ?? currentAttack?.toTerritory ?? 'Territoire'}`"
+                :supporters="currentAttackStats.topDefenders ?? []"
+                :overflow-count="defenseOverflowCount"
+                supporter-badge-class="bg-amber-400"
+            >
+              <div class="flex items-center justify-between text-sm text-slate-400">
+                <span>Puissance défense</span>
+                <span class="text-lg font-semibold text-slate-100">{{ currentAttackStats.defensePoints }}</span>
               </div>
-            </div>
-            <div class="flex w-full max-w-[22rem] flex-col items-center justify-center gap-6 px-4 text-center">
-              <div class="text-7xl font-semibold tracking-tight text-slate-100 drop-shadow-lg">
-                {{ formatDuration(currentAttackStats.remaining) }}
+              <div class="relative h-5 w-full overflow-hidden rounded-full bg-slate-800/80">
+                <div
+                    class="absolute inset-y-0 right-0 rounded-l-full bg-amber-400 transition-all duration-500"
+                    :style="{ width: `${Math.max(4, currentAttackBalance.defensePercent)}%` }"
+                ></div>
               </div>
-              <p class="text-3xl font-semibold text-primary/80 text-pretty">{{ currentAttackEncouragement }}</p>
-            </div>
-            <div class="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
-              <div class="text-right space-y-1">
-                <p class="text-sm uppercase tracking-[0.3em] text-slate-400">Défense</p>
-                <p class="text-2xl font-semibold text-slate-100">
-                  {{ getPlayerUsername(currentAttack?.defenderId) ?? 'Défenseur' }}
-                </p>
-                <p class="text-sm text-slate-400">
-                  Sur {{ currentAttack?.toTerritoryName ?? currentAttack?.toTerritory ?? 'Territoire' }}
-                </p>
-              </div>
-              <div class="flex items-center justify-end gap-2">
-                <span
-                    v-if="defenseOverflowCount > 0"
-                    class="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-slate-800 text-xs font-semibold text-slate-200"
-                >
-                  +{{ defenseOverflowCount }}
-                </span>
-                <div class="flex -space-x-2">
-                  <div
-                      v-for="(supporter, index) in currentAttackStats.topDefenders"
-                      :key="supporter.id || supporter.username || supporter.displayName || `defense-supporter-${index}`"
-                      class="relative"
-                  >
-                    <Avatar class="h-10 w-10 border border-white/10 ring-2 ring-slate-900/60">
-                      <AvatarImage
-                          v-if="supporter.avatarUrl"
-                          :src="supporter.avatarUrl"
-                          :alt="`Avatar de ${supporter.displayName || supporter.username || 'viewer'}`"
-                      />
-                      <AvatarFallback class="flex size-full items-center justify-center rounded-full bg-slate-700 text-xs font-semibold uppercase text-slate-200">
-                        {{ (supporter.displayName || supporter.username || '??').slice(0, 2).toUpperCase() }}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span
-                        v-if="supporter.messages > 1"
-                        class="absolute -bottom-1 -right-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-slate-900"
-                    >
-                      x{{ supporter.messages }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div class="space-y-3">
-                <div class="flex items-center justify-between text-sm text-slate-400">
-                  <span>Puissance défense</span>
-                  <span class="text-lg font-semibold text-slate-100">{{ currentAttackStats.defensePoints }}</span>
-                </div>
-                <div class="relative h-5 w-full overflow-hidden rounded-full bg-slate-800/80">
-                  <div
-                      class="absolute inset-y-0 right-0 rounded-l-full bg-amber-400 transition-all duration-500"
-                      :style="{ width: `${Math.max(4, currentAttackBalance.defensePercent)}%` }"
-                  ></div>
-                </div>
-                <p
-                    v-if="!isBotPlayer(currentAttack?.defenderId)"
-                    class="text-sm text-right text-slate-400"
-                >
-                  {{ currentDefenseMessages }} message<span v-if="currentDefenseMessages !== 1">s</span>
-                  • {{ currentDefenseParticipants }} défenseur<span v-if="currentDefenseParticipants !== 1">s</span>
-                </p>
-              </div>
-            </div>
+              <p
+                  v-if="!isBotPlayer(currentAttack?.defenderId)"
+                  class="text-sm text-right text-slate-400"
+              >
+                {{ currentDefenseMessages }} message<span v-if="currentDefenseMessages !== 1">s</span>
+                • {{ currentDefenseParticipants }} défenseur<span v-if="currentDefenseParticipants !== 1">s</span>
+              </p>
+            </GameCommandSideCard>
           </div>
           <div
               v-if="currentReinforcementStats"
@@ -509,133 +437,60 @@ const showReinforcementWarning = computed(
       <template v-else-if="defendingAttackStats">
         <div class="space-y-8">
           <div class="grid items-start gap-8 md:grid-cols-[minmax(0,1fr)_minmax(16rem,24rem)_minmax(0,1fr)]">
-            <div class="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
-              <div>
-                <p class="text-sm uppercase tracking-[0.3em] text-slate-400">Attaque</p>
-                <p class="text-2xl font-semibold text-slate-100">
-                  {{ getPlayerUsername(defendingAttack?.attackerId) ?? 'Attaquant' }}
-                </p>
-                <p class="text-sm text-slate-400">
-                  Depuis {{ defendingAttack?.fromTerritoryName ?? defendingAttack?.fromTerritory ?? 'Territoire' }}
-                </p>
+            <GameCommandSideCard
+                title="Attaque"
+                :name="getPlayerUsername(defendingAttack?.attackerId) ?? 'Attaquant'"
+                :subtitle="`Depuis ${defendingAttack?.fromTerritoryName ?? defendingAttack?.fromTerritory ?? 'Territoire'}`"
+                :supporters="defendingAttackStats.topAttackers ?? []"
+                :overflow-count="defendingAttackOverflowCount"
+            >
+              <div class="flex items-center justify-between text-sm text-slate-400">
+                <span>Puissance attaque</span>
+                <span class="text-lg font-semibold text-slate-100">{{ defendingAttackStats.attackPoints }}</span>
               </div>
-              <div class="flex items-center gap-2">
-                <div class="flex -space-x-2">
-                  <div
-                      v-for="(supporter, index) in defendingAttackStats.topAttackers"
-                      :key="supporter.id || supporter.username || supporter.displayName || `incoming-supporter-${index}`"
-                      class="relative"
-                  >
-                    <Avatar class="h-10 w-10 border border-white/10 ring-2 ring-slate-900/60">
-                      <AvatarImage
-                          v-if="supporter.avatarUrl"
-                          :src="supporter.avatarUrl"
-                          :alt="`Avatar de ${supporter.displayName || supporter.username || 'viewer'}`"
-                      />
-                      <AvatarFallback class="flex size-full items-center justify-center rounded-full bg-slate-700 text-xs font-semibold uppercase text-slate-200">
-                        {{ (supporter.displayName || supporter.username || '??').slice(0, 2).toUpperCase() }}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span
-                        v-if="supporter.messages > 1"
-                        class="absolute -bottom-1 -right-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-slate-900"
-                    >
-                      x{{ supporter.messages }}
-                    </span>
-                  </div>
-                </div>
-                <span
-                    v-if="defendingAttackOverflowCount > 0"
-                    class="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-slate-800 text-xs font-semibold text-slate-200"
-                >
-                  +{{ defendingAttackOverflowCount }}
-                </span>
+              <div class="relative h-5 w-full overflow-hidden rounded-full bg-slate-800/80">
+                <div
+                    class="absolute inset-y-0 left-0 rounded-r-full bg-primary/80 transition-all duration-500"
+                    :style="{ width: `${Math.max(4, defendingAttackBalance.attackPercent)}%` }"
+                ></div>
               </div>
-              <div class="space-y-3">
-                <div class="flex items-center justify-between text-sm text-slate-400">
-                  <span>Puissance attaque</span>
-                  <span class="text-lg font-semibold text-slate-100">{{ defendingAttackStats.attackPoints }}</span>
-                </div>
-                <div class="relative h-5 w-full overflow-hidden rounded-full bg-slate-800/80">
-                  <div
-                      class="absolute inset-y-0 left-0 rounded-r-full bg-primary/80 transition-all duration-500"
-                      :style="{ width: `${Math.max(4, defendingAttackBalance.attackPercent)}%` }"
-                  ></div>
-                </div>
-                <p class="text-sm text-slate-400">
-                  {{ defendingAttackMessages }} message<span v-if="defendingAttackMessages !== 1">s</span>
-                  • {{ defendingAttackParticipants }} attaquant<span v-if="defendingAttackParticipants !== 1">s</span>
-                </p>
+              <p class="text-sm text-slate-400">
+                {{ defendingAttackMessages }} message<span v-if="defendingAttackMessages !== 1">s</span>
+                • {{ defendingAttackParticipants }} attaquant<span v-if="defendingAttackParticipants !== 1">s</span>
+              </p>
+            </GameCommandSideCard>
+            <GameCommandCenterCard
+                :countdown="formatDuration(defendingAttackStats.remaining)"
+                :encouragement="defendingEncouragement"
+                encouragement-class="text-emerald-300"
+            />
+            <GameCommandSideCard
+                title="Défense"
+                align="right"
+                :name="getPlayerUsername(defendingAttack?.defenderId) ?? 'Défenseur'"
+                :subtitle="`Sur ${defendingAttack?.toTerritoryName ?? defendingAttack?.toTerritory ?? 'Territoire'}`"
+                :supporters="defendingAttackStats.topDefenders ?? []"
+                :overflow-count="defendingDefenseOverflowCount"
+                supporter-badge-class="bg-emerald-400"
+            >
+              <div class="flex items-center justify-between text-sm text-slate-400">
+                <span>Puissance défense</span>
+                <span class="text-lg font-semibold text-slate-100">{{ defendingAttackStats.defensePoints }}</span>
               </div>
-            </div>
-            <div class="flex w-full max-w-[22rem] flex-col items-center justify-center gap-6 px-4 text-center">
-              <div class="text-7xl font-semibold tracking-tight text-slate-100 drop-shadow-lg">
-                {{ formatDuration(defendingAttackStats.remaining) }}
+              <div class="relative h-5 w-full overflow-hidden rounded-full bg-slate-800/80">
+                <div
+                    class="absolute inset-y-0 right-0 rounded-l-full bg-emerald-400 transition-all duration-500"
+                    :style="{ width: `${Math.max(4, defendingAttackBalance.defensePercent)}%` }"
+                ></div>
               </div>
-              <p class="text-3xl font-semibold text-emerald-300 text-pretty">{{ defendingEncouragement }}</p>
-            </div>
-            <div class="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
-              <div class="text-right space-y-1">
-                <p class="text-sm uppercase tracking-[0.3em] text-slate-400">Défense</p>
-                <p class="text-2xl font-semibold text-slate-100">
-                  {{ getPlayerUsername(defendingAttack?.defenderId) ?? 'Défenseur' }}
-                </p>
-                <p class="text-sm text-slate-400">
-                  Sur {{ defendingAttack?.toTerritoryName ?? defendingAttack?.toTerritory ?? 'Territoire' }}
-                </p>
-              </div>
-              <div class="flex items-center justify-end gap-2">
-                <span
-                    v-if="defendingDefenseOverflowCount > 0"
-                    class="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-slate-800 text-xs font-semibold text-slate-200"
-                >
-                  +{{ defendingDefenseOverflowCount }}
-                </span>
-                <div class="flex -space-x-2">
-                  <div
-                      v-for="(supporter, index) in defendingAttackStats.topDefenders"
-                      :key="supporter.id || supporter.username || supporter.displayName || `defense-supporter-${index}`"
-                      class="relative"
-                  >
-                    <Avatar class="h-10 w-10 border border-white/10 ring-2 ring-slate-900/60">
-                      <AvatarImage
-                          v-if="supporter.avatarUrl"
-                          :src="supporter.avatarUrl"
-                          :alt="`Avatar de ${supporter.displayName || supporter.username || 'viewer'}`"
-                      />
-                      <AvatarFallback class="flex size-full items-center justify-center rounded-full bg-slate-700 text-xs font-semibold uppercase text-slate-200">
-                        {{ (supporter.displayName || supporter.username || '??').slice(0, 2).toUpperCase() }}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span
-                        v-if="supporter.messages > 1"
-                        class="absolute -bottom-1 -right-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-emerald-400 px-1 text-[10px] font-semibold text-slate-900"
-                    >
-                      x{{ supporter.messages }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div class="space-y-3">
-                <div class="flex items-center justify-between text-sm text-slate-400">
-                  <span>Puissance défense</span>
-                  <span class="text-lg font-semibold text-slate-100">{{ defendingAttackStats.defensePoints }}</span>
-                </div>
-                <div class="relative h-5 w-full overflow-hidden rounded-full bg-slate-800/80">
-                  <div
-                      class="absolute inset-y-0 right-0 rounded-l-full bg-emerald-400 transition-all duration-500"
-                      :style="{ width: `${Math.max(4, defendingAttackBalance.defensePercent)}%` }"
-                  ></div>
-                </div>
-                <p
-                    v-if="!isBotPlayer(defendingAttack?.defenderId)"
-                    class="text-sm text-right text-slate-400"
-                >
-                  {{ defendingAttackStats.messages }} message<span v-if="defendingAttackStats.messages !== 1">s</span>
-                  • {{ defendingAttackStats.participants }} défenseur<span v-if="defendingAttackStats.participants !== 1">s</span>
-                </p>
-              </div>
-            </div>
+              <p
+                  v-if="!isBotPlayer(defendingAttack?.defenderId)"
+                  class="text-sm text-right text-slate-400"
+              >
+                {{ defendingAttackStats.messages }} message<span v-if="defendingAttackStats.messages !== 1">s</span>
+                • {{ defendingAttackStats.participants }} défenseur<span v-if="defendingAttackStats.participants !== 1">s</span>
+              </p>
+            </GameCommandSideCard>
           </div>
           <div
               v-if="currentReinforcementStats"
