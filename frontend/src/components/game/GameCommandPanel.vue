@@ -156,6 +156,12 @@ function getMessageTotal(attack: any, field: 'attackMessages' | 'defenseMessages
   return Number.isFinite(raw) ? raw : 0
 }
 
+function isBotPlayer(playerId?: string | null): boolean {
+  if (typeof playerId !== 'string') return false
+  const normalized = playerId.trim().toLowerCase()
+  return normalized.startsWith('bot:') || normalized === 'faction ia'
+}
+
 interface Fact {
   label: string
   value: string
@@ -315,8 +321,8 @@ const showReinforcementWarning = computed(
     <CardContent class="space-y-6">
       <template v-if="currentAttackStats">
         <div class="space-y-8">
-          <div class="grid items-start gap-8 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
-            <div class="flex flex-col gap-6 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
+          <div class="grid items-start gap-8 md:grid-cols-[minmax(0,1fr)_minmax(16rem,24rem)_minmax(0,1fr)]">
+            <div class="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
               <div>
                 <p class="text-sm uppercase tracking-[0.3em] text-slate-400">Attaque</p>
                 <p class="text-2xl font-semibold text-slate-100">
@@ -375,20 +381,20 @@ const showReinforcementWarning = computed(
                 </p>
               </div>
             </div>
-            <div class="flex flex-col items-center justify-center gap-6 text-center">
+            <div class="flex w-full max-w-[22rem] flex-col items-center justify-center gap-6 px-4 text-center">
               <div class="text-7xl font-semibold tracking-tight text-slate-100 drop-shadow-lg">
                 {{ formatDuration(currentAttackStats.remaining) }}
               </div>
-              <p class="text-3xl font-semibold text-primary/80">{{ currentAttackEncouragement }}</p>
+              <p class="text-3xl font-semibold text-primary/80 text-pretty">{{ currentAttackEncouragement }}</p>
             </div>
-            <div class="flex flex-col gap-6 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
+            <div class="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
               <div class="text-right space-y-1">
                 <p class="text-sm uppercase tracking-[0.3em] text-slate-400">Défense</p>
                 <p class="text-2xl font-semibold text-slate-100">
                   {{ getPlayerUsername(currentAttack?.defenderId) ?? 'Défenseur' }}
                 </p>
                 <p class="text-sm text-slate-400">
-                  {{ currentAttack?.toTerritoryName ?? currentAttack?.toTerritory ?? 'Territoire' }}
+                  Sur {{ currentAttack?.toTerritoryName ?? currentAttack?.toTerritory ?? 'Territoire' }}
                 </p>
               </div>
               <div class="flex items-center justify-end gap-2">
@@ -425,7 +431,7 @@ const showReinforcementWarning = computed(
               </div>
               <div class="space-y-3">
                 <div class="flex items-center justify-between text-sm text-slate-400">
-                  <span>Défense estimée</span>
+                  <span>Puissance défense</span>
                   <span class="text-lg font-semibold text-slate-100">{{ currentAttackStats.defensePoints }}</span>
                 </div>
                 <div class="relative h-5 w-full overflow-hidden rounded-full bg-slate-800/80">
@@ -434,7 +440,10 @@ const showReinforcementWarning = computed(
                       :style="{ width: `${Math.max(4, currentAttackBalance.defensePercent)}%` }"
                   ></div>
                 </div>
-                <p class="text-sm text-right text-slate-400">
+                <p
+                    v-if="!isBotPlayer(currentAttack?.defenderId)"
+                    class="text-sm text-right text-slate-400"
+                >
                   {{ currentDefenseMessages }} message<span v-if="currentDefenseMessages !== 1">s</span>
                   • {{ currentDefenseParticipants }} défenseur<span v-if="currentDefenseParticipants !== 1">s</span>
                 </p>
@@ -499,10 +508,10 @@ const showReinforcementWarning = computed(
 
       <template v-else-if="defendingAttackStats">
         <div class="space-y-8">
-          <div class="grid items-start gap-8 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
-            <div class="flex flex-col gap-6 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
+          <div class="grid items-start gap-8 md:grid-cols-[minmax(0,1fr)_minmax(16rem,24rem)_minmax(0,1fr)]">
+            <div class="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
               <div>
-                <p class="text-sm uppercase tracking-[0.3em] text-slate-400">Attaque adverse</p>
+                <p class="text-sm uppercase tracking-[0.3em] text-slate-400">Attaque</p>
                 <p class="text-2xl font-semibold text-slate-100">
                   {{ getPlayerUsername(defendingAttack?.attackerId) ?? 'Attaquant' }}
                 </p>
@@ -559,20 +568,20 @@ const showReinforcementWarning = computed(
                 </p>
               </div>
             </div>
-            <div class="flex flex-col items-center justify-center gap-6 text-center">
+            <div class="flex w-full max-w-[22rem] flex-col items-center justify-center gap-6 px-4 text-center">
               <div class="text-7xl font-semibold tracking-tight text-slate-100 drop-shadow-lg">
                 {{ formatDuration(defendingAttackStats.remaining) }}
               </div>
-              <p class="text-3xl font-semibold text-emerald-300">{{ defendingEncouragement }}</p>
+              <p class="text-3xl font-semibold text-emerald-300 text-pretty">{{ defendingEncouragement }}</p>
             </div>
-            <div class="flex flex-col gap-6 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
+            <div class="flex flex-col gap-4 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
               <div class="text-right space-y-1">
-                <p class="text-sm uppercase tracking-[0.3em] text-slate-400">Vos défenses</p>
+                <p class="text-sm uppercase tracking-[0.3em] text-slate-400">Défense</p>
                 <p class="text-2xl font-semibold text-slate-100">
                   {{ getPlayerUsername(defendingAttack?.defenderId) ?? 'Défenseur' }}
                 </p>
                 <p class="text-sm text-slate-400">
-                  {{ defendingAttack?.toTerritoryName ?? defendingAttack?.toTerritory ?? 'Territoire' }}
+                  Sur {{ defendingAttack?.toTerritoryName ?? defendingAttack?.toTerritory ?? 'Territoire' }}
                 </p>
               </div>
               <div class="flex items-center justify-end gap-2">
@@ -609,7 +618,7 @@ const showReinforcementWarning = computed(
               </div>
               <div class="space-y-3">
                 <div class="flex items-center justify-between text-sm text-slate-400">
-                  <span>Défense actuelle</span>
+                  <span>Puissance défense</span>
                   <span class="text-lg font-semibold text-slate-100">{{ defendingAttackStats.defensePoints }}</span>
                 </div>
                 <div class="relative h-5 w-full overflow-hidden rounded-full bg-slate-800/80">
@@ -618,7 +627,10 @@ const showReinforcementWarning = computed(
                       :style="{ width: `${Math.max(4, defendingAttackBalance.defensePercent)}%` }"
                   ></div>
                 </div>
-                <p class="text-sm text-right text-slate-400">
+                <p
+                    v-if="!isBotPlayer(defendingAttack?.defenderId)"
+                    class="text-sm text-right text-slate-400"
+                >
                   {{ defendingAttackStats.messages }} message<span v-if="defendingAttackStats.messages !== 1">s</span>
                   • {{ defendingAttackStats.participants }} défenseur<span v-if="defendingAttackStats.participants !== 1">s</span>
                 </p>
