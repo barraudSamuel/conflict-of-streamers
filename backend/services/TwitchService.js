@@ -84,7 +84,7 @@ class TwitchService {
 
         client.on('message', (channel, tags, message, self) => {
             if (self) return;
-            this.handleChatCommand(gameId, playerId, tags?.username ?? '', message);
+            this.handleChatCommand(gameId, playerId, tags, message);
         });
 
         client.on('connected', () => {
@@ -187,15 +187,40 @@ class TwitchService {
         }
     }
 
-    handleChatCommand(gameId, playerId, username, message) {
+    buildViewerInfo(tags) {
+        const rawUsername = typeof tags?.username === 'string' ? tags.username : '';
+        const rawDisplayName = typeof tags?.['display-name'] === 'string' ? tags['display-name'] : '';
+        const rawUserId = typeof tags?.['user-id'] === 'string' ? tags['user-id'] : '';
+        const userId = rawUserId && rawUserId.trim() !== '' ? rawUserId.trim() : null;
+        const usernameBase = rawUsername && rawUsername.trim() !== '' ? rawUsername.trim() : null;
+        const displayNameBase = rawDisplayName && rawDisplayName.trim() !== '' ? rawDisplayName.trim() : null;
+
+        const username = usernameBase ?? displayNameBase ?? (userId ? `viewer-${userId}` : 'viewer');
+        const displayName = displayNameBase ?? username;
+
+        const avatarUrl = userId ? `https://avatars.twitchcdn.net/v1/u/${userId}?width=64&height=64&format=png` : null;
+
+        return {
+            id: userId,
+            username,
+            displayName,
+            color: typeof tags?.color === 'string' ? tags.color : null,
+            avatarUrl
+        };
+    }
+
+    handleChatCommand(gameId, playerId, tags, message) {
         const game = GameManager.getGame(gameId);
         if (!game || game.status !== 'playing') return;
 
         const msg = typeof message === 'string' ? message.trim().toLowerCase() : '';
         if (!msg) return;
 
+        const viewer = this.buildViewerInfo(tags);
+        const username = viewer.username;
+
         const processAttackCommand = (territoryId, isDefense) => {
-            const added = AttackManager.addAttackCommand(game.id, territoryId, username, isDefense);
+            const added = AttackManager.addAttackCommand(game.id, territoryId, viewer, isDefense);
             if (added) {
                 const updatedAttack = game.activeAttacks.get(territoryId);
                 this.notifyCommandProcessed(
@@ -203,7 +228,10 @@ class TwitchService {
                     isDefense ? 'defense' : 'attack',
                     username,
                     territoryId,
-                    { attack: updatedAttack ? updatedAttack.toJSON() : null }
+                    {
+                        attack: updatedAttack ? updatedAttack.toJSON() : null,
+                        viewer
+                    }
                 );
             }
         };
@@ -253,16 +281,19 @@ class TwitchService {
                         const updated = ReinforcementManager.addContribution(
                             game.id,
                             territoryId,
-                            username,
+                            viewer.username,
                             game.settings?.pointsPerCommand ?? 1
                         );
                         if (updated) {
                             this.notifyCommandProcessed(
                                 game.id,
                                 'reinforcement',
-                                username,
+                                viewer.username,
                                 territoryId,
-                                { reinforcement: updated }
+                                {
+                                    reinforcement: updated,
+                                    viewer
+                                }
                             );
                         }
                     }

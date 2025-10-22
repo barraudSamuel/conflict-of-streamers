@@ -118,7 +118,7 @@ class AttackManager {
         return attack;
     }
 
-    addAttackCommand(gameId, territoryId, userId, isDefense = false) {
+    addAttackCommand(gameId, territoryId, participant, isDefense = false) {
         const game = GameManager.getGame(gameId);
         if (!game) return false;
 
@@ -130,9 +130,9 @@ class AttackManager {
         const points = game.settings.pointsPerCommand;
 
         if (isDefense) {
-            attack.addDefensePoint(userId, points);
+            attack.addDefensePoint(participant, points);
         } else {
-            attack.addAttackPoint(userId, points);
+            attack.addAttackPoint(participant, points);
         }
 
         return true;

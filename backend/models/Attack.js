@@ -61,6 +61,8 @@ export class Attack {
         this.cancelledBy = null;
         this.cancelledAt = null;
         this.cancelReason = null;
+        this.attackContributions = new Map(); // key -> { id, username, displayName, avatarUrl, messages, lastSeen }
+        this.defenseContributions = new Map();
     }
 
     getUniqueAttackers() {
@@ -98,21 +100,152 @@ export class Attack {
         return this.defensePoints;
     }
 
-    addAttackPoint(userId, points = 1) {
+    static buildTwitchAvatarUrl(userId, size = 60) {
+        if (typeof userId !== 'string') {
+            return null;
+        }
+        const trimmed = userId.trim();
+        if (!trimmed) {
+            return null;
+        }
+        const numericSize = Number(size);
+        const safeSize = Number.isFinite(numericSize) && numericSize > 0 ? Math.min(300, Math.max(28, Math.round(numericSize))) : 60;
+        return `https://avatars.twitchcdn.net/v1/u/${trimmed}?width=${safeSize}&height=${safeSize}&format=png`;
+    }
+
+    normalizeParticipant(participant) {
+        if (!participant) {
+            return null;
+        }
+
+        if (typeof participant === 'string') {
+            const username = participant.trim();
+            if (!username) {
+                return null;
+            }
+            const key = username.toLowerCase();
+            return {
+                key,
+                id: null,
+                username,
+                displayName: username,
+                avatarUrl: null
+            };
+        }
+
+        if (typeof participant === 'object') {
+            const rawId = typeof participant.id === 'string' ? participant.id.trim() : typeof participant.userId === 'string' ? participant.userId.trim() : '';
+            const id = rawId || null;
+            const usernameCandidate =
+                typeof participant.username === 'string' && participant.username.trim() !== ''
+                    ? participant.username.trim()
+                    : typeof participant.login === 'string' && participant.login.trim() !== ''
+                        ? participant.login.trim()
+                        : null;
+            const displayNameCandidate =
+                typeof participant.displayName === 'string' && participant.displayName.trim() !== ''
+                    ? participant.displayName.trim()
+                    : usernameCandidate;
+            const username = usernameCandidate ?? (id ? `viewer-${id}` : 'viewer');
+            const displayName = displayNameCandidate ?? username;
+            const key = id ?? username.toLowerCase();
+
+            let avatarUrl = null;
+            if (typeof participant.avatarUrl === 'string' && participant.avatarUrl.trim() !== '') {
+                avatarUrl = participant.avatarUrl.trim();
+            } else if (id) {
+                avatarUrl = Attack.buildTwitchAvatarUrl(id);
+            }
+
+            return {
+                key,
+                id,
+                username,
+                displayName,
+                avatarUrl
+            };
+        }
+
+        return null;
+    }
+
+    recordContribution(container, participant, increment) {
+        if (!participant?.key) {
+            return;
+        }
+        const now = Date.now();
+        const existing = container.get(participant.key) ?? {
+            id: participant.id,
+            username: participant.username,
+            displayName: participant.displayName,
+            avatarUrl: participant.avatarUrl,
+            messages: 0,
+            lastSeen: now
+        };
+
+        existing.messages = (existing.messages ?? 0) + increment;
+        existing.lastSeen = now;
+
+        if (!existing.avatarUrl && participant.avatarUrl) {
+            existing.avatarUrl = participant.avatarUrl;
+        }
+        if (!existing.displayName && participant.displayName) {
+            existing.displayName = participant.displayName;
+        }
+        if (!existing.username && participant.username) {
+            existing.username = participant.username;
+        }
+        if (!existing.id && participant.id) {
+            existing.id = participant.id;
+        }
+
+        container.set(participant.key, existing);
+    }
+
+    getTopContributors(container, limit = 10) {
+        return Array.from(container.values())
+            .sort((a, b) => {
+                const diff = (b.messages ?? 0) - (a.messages ?? 0);
+                if (diff !== 0) {
+                    return diff;
+                }
+                const nameA = (a.displayName ?? a.username ?? '').toLowerCase();
+                const nameB = (b.displayName ?? b.username ?? '').toLowerCase();
+                return nameA.localeCompare(nameB);
+            })
+            .slice(0, limit)
+            .map((entry) => ({
+                id: entry.id ?? null,
+                username: entry.username ?? null,
+                displayName: entry.displayName ?? entry.username ?? null,
+                avatarUrl: entry.avatarUrl ?? null,
+                messages: entry.messages ?? 0
+            }));
+    }
+
+    addAttackPoint(participant, points = 1) {
         if (this.status !== 'ongoing') return;
 
         const increment = positiveOr(points, 1);
         this.attackMessages += increment;
-        this.participantAttackers.add(userId);
+        const normalized = this.normalizeParticipant(participant);
+        if (normalized) {
+            this.participantAttackers.add(normalized.key);
+            this.recordContribution(this.attackContributions, normalized, increment);
+        }
         this.recalculateAttackPower();
     }
 
-    addDefensePoint(userId, points = 1) {
+    addDefensePoint(participant, points = 1) {
         if (this.status !== 'ongoing') return;
 
         const increment = positiveOr(points, 1);
         this.defenseMessages += increment;
-        this.participantDefenders.add(userId);
+        const normalized = this.normalizeParticipant(participant);
+        if (normalized) {
+            this.participantDefenders.add(normalized.key);
+            this.recordContribution(this.defenseContributions, normalized, increment);
+        }
         this.recalculateDefensePower();
     }
 
@@ -192,6 +325,10 @@ export class Attack {
             participantCount: {
                 attackers: this.participantAttackers.size,
                 defenders: this.participantDefenders.size
+            },
+            topContributors: {
+                attackers: this.getTopContributors(this.attackContributions),
+                defenders: this.getTopContributors(this.defenseContributions)
             }
         };
     }
