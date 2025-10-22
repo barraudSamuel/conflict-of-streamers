@@ -2,6 +2,7 @@ import tmi from 'tmi.js';
 import GameManager from '../managers/GameManager.js';
 import AttackManager from '../managers/AttackManager.js';
 import ReinforcementManager from '../managers/ReinforcementManager.js';
+import { getTwitchAvatar } from '../utils/picture-profile.js';
 
 const READY_STATE_OPEN = 'OPEN';
 
@@ -82,9 +83,13 @@ class TwitchService {
             channels: [normalizedChannel]
         });
 
-        client.on('message', (channel, tags, message, self) => {
+        client.on('message', async (channel, tags, message, self) => {
             if (self) return;
-            this.handleChatCommand(gameId, playerId, tags, message);
+            try {
+                await this.handleChatCommand(gameId, playerId, tags, message);
+            } catch (error) {
+                console.error(`Failed to handle Twitch chat command: ${error.message}`);
+            }
         });
 
         client.on('connected', () => {
@@ -187,7 +192,7 @@ class TwitchService {
         }
     }
 
-    buildViewerInfo(tags) {
+    async buildViewerInfo(tags) {
         const rawUsername = typeof tags?.username === 'string' ? tags.username : '';
         const rawDisplayName = typeof tags?.['display-name'] === 'string' ? tags['display-name'] : '';
         const rawUserId = typeof tags?.['user-id'] === 'string' ? tags['user-id'] : '';
@@ -197,8 +202,16 @@ class TwitchService {
 
         const username = usernameBase ?? displayNameBase ?? (userId ? `viewer-${userId}` : 'viewer');
         const displayName = displayNameBase ?? username;
+        const avatarLookup = usernameBase ?? displayNameBase;
+        let avatarUrl = null;
 
-        const avatarUrl = userId ? `https://avatars.twitchcdn.net/v1/u/${userId}?width=64&height=64&format=png` : null;
+        if (avatarLookup) {
+            try {
+                avatarUrl = await getTwitchAvatar(avatarLookup);
+            } catch (error) {
+                avatarUrl = null;
+            }
+        }
 
         return {
             id: userId,
@@ -209,14 +222,14 @@ class TwitchService {
         };
     }
 
-    handleChatCommand(gameId, playerId, tags, message) {
+    async handleChatCommand(gameId, playerId, tags, message) {
         const game = GameManager.getGame(gameId);
         if (!game || game.status !== 'playing') return;
 
         const msg = typeof message === 'string' ? message.trim().toLowerCase() : '';
         if (!msg) return;
 
-        const viewer = this.buildViewerInfo(tags);
+        const viewer = await this.buildViewerInfo(tags);
         const username = viewer.username;
 
         const processAttackCommand = (territoryId, isDefense) => {
