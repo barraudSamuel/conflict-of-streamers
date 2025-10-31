@@ -87,6 +87,129 @@ const {
 const goHome = () => {
   router.push('/')
 }
+
+type CornerDirection = 'bottom-right' | 'bottom-left' | 'top-left' | 'top-right'
+
+const confettiColors = ['#f97316', '#22c55e', '#38bdf8', '#facc15', '#e879f9', '#f472b6']
+
+const createCornerEmitter = (
+  position: { x: number; y: number },
+  direction: CornerDirection
+) => ({
+  position,
+  direction,
+  rate: {
+    delay: 0.18,
+    quantity: 12
+  },
+  size: {
+    width: 0,
+    height: 0
+  },
+  life: {
+    count: 0
+  },
+  particles: {
+    life: {
+      count: 0,
+      duration: {
+        value: 3.2,
+        sync: true
+      }
+    },
+    color: {
+      value: confettiColors
+    },
+    shape: {
+      type: ['square', 'circle', 'triangle']
+    },
+    opacity: {
+      value: {
+        min: 0.4,
+        max: 1
+      }
+    },
+    size: {
+      value: {
+        min: 3,
+        max: 7
+      }
+    },
+    move: {
+      direction,
+      enable: true,
+      gravity: {
+        enable: true,
+        acceleration: 22
+      },
+      speed: {
+        min: 18,
+        max: 34
+      },
+      decay: 0.08,
+      outModes: {
+        default: 'destroy',
+        bottom: 'destroy',
+        top: 'destroy'
+      }
+    },
+    rotate: {
+      value: {
+        min: 0,
+        max: 360
+      },
+      direction: 'random',
+      animation: {
+        enable: true,
+        speed: 22
+      }
+    },
+    tilt: {
+      enable: true,
+      direction: 'random',
+      value: {
+        min: 0,
+        max: 360
+      },
+      animation: {
+        enable: true,
+        speed: 26
+      }
+    },
+    wobble: {
+      enable: true,
+      distance: 45,
+      speed: {
+        min: -12,
+        max: 12
+      }
+    }
+  }
+})
+
+const winnerConfettiOptions = {
+  detectRetina: true,
+  fpsLimit: 120,
+  fullScreen: {
+    enable: false
+  },
+  background: {
+    color: {
+      value: 'transparent'
+    }
+  },
+  particles: {
+    number: {
+      value: 0
+    }
+  },
+  emitters: [
+    createCornerEmitter({ x: 0, y: 0 }, 'bottom-right'),
+    createCornerEmitter({ x: 100, y: 0 }, 'bottom-left'),
+    createCornerEmitter({ x: 0, y: 100 }, 'top-right'),
+    createCornerEmitter({ x: 100, y: 100 }, 'top-left')
+  ]
+}
 </script>
 
 <template>
@@ -103,6 +226,16 @@ const goHome = () => {
     </div>
 
     <div v-else-if="game" class="relative min-h-screen">
+      <div
+          v-if="winnerModalVisible && winnerPlayerId && currentPlayerId === winnerPlayerId"
+          class="pointer-events-none absolute inset-0 z-60"
+      >
+        <vue-particles
+            id="winner-confetti"
+            class="h-full w-full"
+            :options="winnerConfettiOptions"
+        />
+      </div>
       <div class="absolute inset-0">
         <LobbyDeckMap
             appearance="game"
