@@ -77,7 +77,7 @@ const showDefenseOverlay = computed(() => mapAppearance.value === 'game')
 const showAttackOverlay = computed(() => mapAppearance.value === 'game')
 const viewZoom = ref(initialViewState.zoom)
 
-const DEFAULT_AVAILABLE_COLOR: Color = [120, 113, 108, 255]
+const DEFAULT_AVAILABLE_COLOR: Color = [168, 162, 158, 255]
 const DEFAULT_OCCUPIED_COLOR: Color = [120, 113, 108, 255]
 const DEFAULT_BORDER_COLOR: Color = [30, 41, 59, 240]
 const CURRENT_PLAYER_BORDER_COLOR: Color = [226, 232, 240, 255]
