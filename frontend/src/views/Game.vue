@@ -97,7 +97,6 @@ const createCornerEmitter = (
   direction: CornerDirection
 ) => ({
   position,
-  direction,
   rate: {
     delay: 0.18,
     quantity: 12
@@ -110,13 +109,6 @@ const createCornerEmitter = (
     count: 0
   },
   particles: {
-    life: {
-      count: 0,
-      duration: {
-        value: 3.2,
-        sync: true
-      }
-    },
     color: {
       value: confettiColors
     },
@@ -143,8 +135,8 @@ const createCornerEmitter = (
         acceleration: 22
       },
       speed: {
-        min: 18,
-        max: 34
+        min: 28,
+        max:120
       },
       decay: 0.08,
       outModes: {
@@ -206,8 +198,6 @@ const winnerConfettiOptions = {
   emitters: [
     createCornerEmitter({ x: 0, y: 0 }, 'bottom-right'),
     createCornerEmitter({ x: 100, y: 0 }, 'bottom-left'),
-    createCornerEmitter({ x: 0, y: 100 }, 'top-right'),
-    createCornerEmitter({ x: 100, y: 100 }, 'top-left')
   ]
 }
 </script>

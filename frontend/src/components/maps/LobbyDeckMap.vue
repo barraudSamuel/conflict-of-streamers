@@ -77,13 +77,13 @@ const showDefenseOverlay = computed(() => mapAppearance.value === 'game')
 const showAttackOverlay = computed(() => mapAppearance.value === 'game')
 const viewZoom = ref(initialViewState.zoom)
 
-const DEFAULT_AVAILABLE_COLOR: Color = [71, 85, 105, 130]
-const DEFAULT_OCCUPIED_COLOR: Color = [148, 163, 184, 210]
-const DEFAULT_BORDER_COLOR: Color = [30, 41, 59, 220]
+const DEFAULT_AVAILABLE_COLOR: Color = [120, 113, 108, 255]
+const DEFAULT_OCCUPIED_COLOR: Color = [120, 113, 108, 255]
+const DEFAULT_BORDER_COLOR: Color = [30, 41, 59, 240]
 const CURRENT_PLAYER_BORDER_COLOR: Color = [226, 232, 240, 255]
 const CURRENT_PLAYER_FALLBACK_COLOR: Color = [34, 197, 94, 220]
 const BOT_OWNER_PREFIX = 'bot:'
-const BOT_OWNER_COLOR = '#64748b'
+const BOT_OWNER_COLOR = '#a8a29e'
 const BOT_HIGHLIGHT_COLOR: Color = [100, 116, 139, 210]
 const ATTACK_ARROW_COLOR: Color = [239, 68, 68, 235]
 const ATTACK_ARROW_SIZE_MIN = 14
@@ -924,6 +924,10 @@ const createGeoLayer = () =>
     }
   })
 
+const DARK_TEXT_CURRENT: Color = [15, 23, 42, 255] // tailwind slate-900
+const DARK_TEXT_BOT: Color = [68, 64, 60, 255] // tailwind stone-700
+const DARK_TEXT_DEFAULT: Color = [87, 83, 78, 255] // tailwind stone-600
+
 const createDefenseLayer = () =>
   new TextLayer<DefenseLabelDatum>({
     id: 'territory-defense-labels',
@@ -933,12 +937,12 @@ const createDefenseLayer = () =>
     getText: (item) => `🛡${item.defense}`,
     getColor: (item) => {
       if (item.isCurrent) {
-        return [248, 250, 252, 255]
+        return DARK_TEXT_CURRENT
       }
       if (item.isBot) {
-        return [148, 163, 184, 255]
+        return DARK_TEXT_BOT
       }
-      return [226, 232, 240, 255]
+      return DARK_TEXT_DEFAULT
     },
     getSize: () => defenseLabelSize.value,
     sizeUnits: 'pixels',
@@ -1099,7 +1103,7 @@ onBeforeUnmount(() => {
   height: 100%;
   border-radius: 0.75rem;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 30%, rgba(148, 163, 184, 0.15), rgba(30, 41, 59, 0.85));
+  background: #38bdf8;
 }
 
 .lobby-map-canvas--game {
