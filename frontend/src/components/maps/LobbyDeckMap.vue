@@ -190,6 +190,295 @@ const territoryState = computed(() => {
   return state
 })
 
+const territoryTextures = ref<Record<string, string>>({})
+const territoryTextureKeys = ref<Record<string, string>>({})
+const pendingSplitTextureTokens = new Map<string, number>()
+let splitTextureGenerationCounter = 0
+
+const activeAttackByTerritory = computed(() => {
+  const map = new Map<string, ActiveAttack>()
+  ;(props.activeAttacks ?? []).forEach((attack) => {
+    if (!attack) return
+    const territoryKey =
+      (typeof attack.territoryId === 'string' && attack.territoryId.trim() !== ''
+        ? attack.territoryId.trim()
+        : null) ||
+      (typeof attack.toTerritory === 'string' && attack.toTerritory.trim() !== ''
+        ? attack.toTerritory.trim()
+        : null)
+    if (!territoryKey) {
+      return
+    }
+    map.set(territoryKey, attack)
+  })
+  return map
+})
+
+const territoryTextureDescriptors = computed(() => {
+  const playersById = new Map(props.players.map((player) => [player.id, player]))
+  return props.territories.map((territory) => {
+    const territoryId =
+      typeof territory.id === 'string' && territory.id.trim() !== '' ? territory.id.trim() : ''
+    const ownerId =
+      typeof territory.ownerId === 'string' && territory.ownerId.trim() !== ''
+        ? territory.ownerId.trim()
+        : null
+    const owner = ownerId ? playersById.get(ownerId) ?? null : null
+    const ownerAvatar =
+      typeof owner?.avatarUrl === 'string' && owner.avatarUrl.trim() !== ''
+        ? owner.avatarUrl.trim()
+        : null
+    const activeAttack = territoryId ? activeAttackByTerritory.value.get(territoryId) ?? null : null
+    const attackerId =
+      typeof activeAttack?.attackerId === 'string' && activeAttack.attackerId.trim() !== ''
+        ? activeAttack.attackerId.trim()
+        : null
+    const attacker = attackerId ? playersById.get(attackerId) ?? null : null
+    const attackerAvatar =
+      typeof attacker?.avatarUrl === 'string' && attacker.avatarUrl.trim() !== ''
+        ? attacker.avatarUrl.trim()
+        : null
+
+    return {
+      territoryId,
+      ownerAvatar,
+      attackerAvatar,
+      isUnderAttack: Boolean(activeAttack)
+    }
+  })
+})
+
+const territoryTextureSignature = computed(() =>
+  territoryTextureDescriptors.value
+    .map((descriptor) =>
+      [
+        descriptor.territoryId,
+        descriptor.ownerAvatar ?? '',
+        descriptor.isUnderAttack ? 'attack' : 'idle',
+        descriptor.attackerAvatar ?? ''
+      ].join(':')
+    )
+    .join('|')
+)
+
+const splitTextureCache = new Map<string, string>()
+const splitTexturePromiseCache = new Map<string, Promise<string>>()
+
+const loadImage = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    if (typeof Image === 'undefined') {
+      reject(new Error('Image constructor unavailable in this environment'))
+      return
+    }
+    const image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error(`Failed to load image: ${url}`))
+    image.src = url
+  })
+
+const createSplitTexture = async (leftUrl: string, rightUrl: string): Promise<string> => {
+  // Build a side-by-side texture so under-attack territories show defender (left) vs attacker (right)
+  if (typeof document === 'undefined') {
+    return leftUrl
+  }
+
+  const [leftImage, rightImage] = await Promise.all([loadImage(leftUrl), loadImage(rightUrl)])
+  const canvas = document.createElement('canvas')
+  const size = 256
+  canvas.width = size
+  canvas.height = size
+  const context = canvas.getContext('2d')
+  if (!context) {
+    return leftUrl
+  }
+
+  context.imageSmoothingEnabled = true
+  context.imageSmoothingQuality = 'high'
+  context.clearRect(0, 0, size, size)
+  context.fillStyle = '#0f172a' // tailwind slate-900
+  context.globalAlpha = 0.12
+  context.fillRect(0, 0, size, size)
+  context.globalAlpha = 1
+  const drawCover = (image: HTMLImageElement, x: number, y: number, width: number, height: number) => {
+    const naturalWidth = image.naturalWidth || image.width
+    const naturalHeight = image.naturalHeight || image.height
+
+    if (!naturalWidth || !naturalHeight) {
+      context.drawImage(image, x, y, width, height)
+      return
+    }
+
+    const scale = Math.max(width / naturalWidth, height / naturalHeight)
+    const scaledWidth = naturalWidth * scale
+    const scaledHeight = naturalHeight * scale
+    const offsetX = x + (width - scaledWidth) / 2
+    const offsetY = y + (height - scaledHeight) / 2
+
+    context.save()
+    context.beginPath()
+    context.rect(x, y, width, height)
+    context.clip()
+    context.drawImage(image, offsetX, offsetY, scaledWidth, scaledHeight)
+    context.restore()
+  }
+
+  drawCover(leftImage, 0, 0, size / 2, size)
+  drawCover(rightImage, size / 2, 0, size / 2, size)
+  context.fillStyle = 'rgba(15, 23, 42, 0.38)'
+  context.fillRect(size / 2 - 1, 0, 2, size)
+
+  return canvas.toDataURL('image/png')
+}
+
+const ensureSplitTexture = (leftUrl: string, rightUrl: string): Promise<string> => {
+  const cacheKey = `${leftUrl}|${rightUrl}`
+  if (splitTextureCache.has(cacheKey)) {
+    return Promise.resolve(splitTextureCache.get(cacheKey) as string)
+  }
+
+  const existing = splitTexturePromiseCache.get(cacheKey)
+  if (existing) {
+    return existing
+  }
+
+  const promise = createSplitTexture(leftUrl, rightUrl)
+    .then((dataUrl) => {
+      splitTextureCache.set(cacheKey, dataUrl)
+      splitTexturePromiseCache.delete(cacheKey)
+      return dataUrl
+    })
+    .catch((error) => {
+      splitTexturePromiseCache.delete(cacheKey)
+      throw error
+    })
+
+  splitTexturePromiseCache.set(cacheKey, promise)
+  return promise
+}
+
+const generateSplitTexture = (territoryId: string, key: string, leftUrl: string, rightUrl: string) => {
+  if (!territoryId) {
+    return
+  }
+
+  territoryTextureKeys.value = {
+    ...territoryTextureKeys.value,
+    [territoryId]: key
+  }
+
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    territoryTextures.value = {
+      ...territoryTextures.value,
+      [territoryId]: leftUrl
+    }
+    return
+  }
+
+  splitTextureGenerationCounter += 1
+  const token = splitTextureGenerationCounter
+  pendingSplitTextureTokens.set(territoryId, token)
+
+  ensureSplitTexture(leftUrl, rightUrl)
+    .then((dataUrl) => {
+      if (pendingSplitTextureTokens.get(territoryId) !== token) {
+        return
+      }
+      territoryTextures.value = {
+        ...territoryTextures.value,
+        [territoryId]: dataUrl
+      }
+      pendingSplitTextureTokens.delete(territoryId)
+    })
+    .catch(() => {
+      if (pendingSplitTextureTokens.get(territoryId) !== token) {
+        return
+      }
+      territoryTextures.value = {
+        ...territoryTextures.value,
+        [territoryId]: leftUrl
+      }
+      pendingSplitTextureTokens.delete(territoryId)
+    })
+}
+
+const syncTerritoryTextures = () => {
+  const descriptors = territoryTextureDescriptors.value
+  const seen = new Set<string>()
+
+  descriptors.forEach((descriptor) => {
+    const territoryId = descriptor.territoryId
+    if (!territoryId) {
+      return
+    }
+    seen.add(territoryId)
+
+    const { ownerAvatar, attackerAvatar, isUnderAttack } = descriptor
+
+    if (isUnderAttack && ownerAvatar && attackerAvatar) {
+      const key = `split:${ownerAvatar}|${attackerAvatar}`
+      if (
+        territoryTextureKeys.value[territoryId] === key &&
+        (territoryTextures.value[territoryId] || pendingSplitTextureTokens.has(territoryId))
+      ) {
+        return
+      }
+      generateSplitTexture(territoryId, key, ownerAvatar, attackerAvatar)
+      return
+    }
+
+    if (ownerAvatar) {
+      const key = `single:${ownerAvatar}`
+      if (
+        territoryTextureKeys.value[territoryId] !== key ||
+        territoryTextures.value[territoryId] !== ownerAvatar
+      ) {
+        territoryTextureKeys.value = {
+          ...territoryTextureKeys.value,
+          [territoryId]: key
+        }
+        territoryTextures.value = {
+          ...territoryTextures.value,
+          [territoryId]: ownerAvatar
+        }
+      }
+      pendingSplitTextureTokens.delete(territoryId)
+      return
+    }
+
+    if (territoryTextureKeys.value[territoryId]) {
+      const { [territoryId]: _removedKey, ...restKeys } = territoryTextureKeys.value
+      territoryTextureKeys.value = restKeys
+    }
+    if (territoryTextures.value[territoryId]) {
+      const { [territoryId]: _removedTexture, ...restTextures } = territoryTextures.value
+      territoryTextures.value = restTextures
+    }
+    pendingSplitTextureTokens.delete(territoryId)
+  })
+
+  Object.keys(territoryTextureKeys.value).forEach((territoryId) => {
+    if (!seen.has(territoryId)) {
+      const { [territoryId]: _removedKey, ...restKeys } = territoryTextureKeys.value
+      territoryTextureKeys.value = restKeys
+    }
+  })
+  Object.keys(territoryTextures.value).forEach((territoryId) => {
+    if (!seen.has(territoryId)) {
+      const { [territoryId]: _removedTexture, ...restTextures } = territoryTextures.value
+      territoryTextures.value = restTextures
+    }
+  })
+}
+
+watch(
+  territoryTextureSignature,
+  () => {
+    syncTerritoryTextures()
+  },
+  { immediate: true }
+)
+
 const DEFENSE_SIZE_MIN = 2
 const DEFENSE_SIZE_MAX = 26
 const defenseLabelSize = computed(() => {
@@ -330,11 +619,12 @@ const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
   const playerById = new Map(props.players.map((player) => [player.id, player]))
 
   props.territories.forEach((territory) => {
-    const ownerId = territory.ownerId ?? null
-    if (!ownerId || typeof ownerId !== 'string' || ownerId.startsWith(BOT_OWNER_PREFIX)) {
+    const ownerIdRaw = typeof territory.ownerId === 'string' ? territory.ownerId.trim() : ''
+    if (!ownerIdRaw || ownerIdRaw.startsWith(BOT_OWNER_PREFIX)) {
       return
     }
 
+    const ownerId = ownerIdRaw
     const owner = playerById.get(ownerId)
     const avatarUrl =
       typeof owner?.avatarUrl === 'string' && owner.avatarUrl.trim() !== ''
@@ -342,6 +632,15 @@ const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
         : null
 
     if (!avatarUrl) {
+      return
+    }
+
+    const territoryKey =
+      typeof territory.id === 'string' && territory.id.trim() !== '' ? territory.id.trim() : null
+    const textureSource =
+      (territoryKey && territoryTextures.value[territoryKey]) || avatarUrl
+
+    if (!textureSource) {
       return
     }
 
@@ -430,8 +729,9 @@ const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
       const indexArray =
         vertexCount > 65535 ? new Uint32Array(indices) : new Uint16Array(indices)
 
+      const meshBaseId = territoryKey ?? (feature.properties?.id ?? 'unknown')
       meshes.push({
-        id: `${territory.id ?? feature.properties?.id ?? 'unknown'}:${ownerId}:${polygonIndex}`,
+        id: `${meshBaseId}:${ownerId}:${polygonIndex}`,
         mesh: {
           attributes: {
             POSITION: { size: 3, value: positions },
@@ -439,7 +739,7 @@ const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
           },
           indices: { size: 1, value: indexArray }
         },
-        texture: avatarUrl
+        texture: textureSource
       })
     })
   })
@@ -1015,6 +1315,9 @@ watch(viewZoom, () => {
 onBeforeUnmount(() => {
   stopAttackHighlight()
   stopUnderAttackHighlight()
+  pendingSplitTextureTokens.clear()
+  splitTexturePromiseCache.clear()
+  splitTextureCache.clear()
   if (deckInstance) {
     deckInstance.finalize()
     deckInstance = null
