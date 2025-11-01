@@ -92,6 +92,7 @@ const ATTACK_TARGET_FILL_COLOR_PRIMARY: Color = [248, 113, 113, 110]
 const ATTACK_TARGET_FILL_COLOR_SECONDARY: Color = [248, 113, 113, 60]
 const UNDER_ATTACK_BORDER_COLOR_PRIMARY: Color = [248, 113, 113, 255] // tailwind rose-400
 const UNDER_ATTACK_BORDER_COLOR_SECONDARY: Color = [220, 38, 38, 255] // tailwind red-600
+const UNDER_ATTACK_FILL_COLOR: Color = [220, 38, 38, 51] // ~20% opacity overlay
 const MIN_POLYGON_EXTENT = 1e-6
 
 const toColorTuple = (color: Color): [number, number, number, number] => {
@@ -195,6 +196,117 @@ const territoryTextureKeys = ref<Record<string, string>>({})
 const pendingSplitTextureTokens = new Map<string, number>()
 let splitTextureGenerationCounter = 0
 
+interface ParticipantTextureInfo {
+  avatar: string | null
+  colorTexture: string | null
+  color: string | null
+}
+
+interface TerritoryTextureDescriptor {
+  territoryId: string
+  ownerId: string | null
+  attackerId: string | null
+  owner: ParticipantTextureInfo
+  attacker: ParticipantTextureInfo
+  isUnderAttack: boolean
+}
+
+const solidColorTextureCache = new Map<string, string>()
+
+const sanitizeColorString = (input: string | null | undefined): string | null => {
+  if (typeof input !== 'string') {
+    return null
+  }
+  const trimmed = input.trim()
+  if (!trimmed) {
+    return null
+  }
+  return trimmed.replace(/["'<>\n\r]/g, '')
+}
+
+const colorArrayToCss = (color: Color): string => {
+  const [r = 0, g = 0, b = 0, a = 255] = color
+  const alpha = Math.max(0, Math.min(1, a / 255))
+  if (alpha >= 1) {
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`
+  }
+  return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${Number(
+    alpha.toFixed(3)
+  )})`
+}
+
+const DEFAULT_DEFENDER_TEXTURE_COLOR = colorArrayToCss(DEFAULT_OCCUPIED_COLOR)
+const DEFAULT_ATTACKER_TEXTURE_COLOR = colorArrayToCss(UNDER_ATTACK_BORDER_COLOR_PRIMARY)
+
+const getSolidColorTexture = (color: string | null | undefined): string | null => {
+  const sanitized = sanitizeColorString(color)
+  if (!sanitized) {
+    return null
+  }
+  const key = sanitized.toLowerCase()
+  if (solidColorTextureCache.has(key)) {
+    return solidColorTextureCache.get(key) as string
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="${sanitized}"/></svg>`
+  const dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+  solidColorTextureCache.set(key, dataUrl)
+  return dataUrl
+}
+
+const resolveParticipantTexture = (
+  playerId: string | null,
+  playersById: Map<string, LobbyPlayer>,
+  fallbackColor?: string | null
+): ParticipantTextureInfo => {
+  const sanitizedFallback = sanitizeColorString(fallbackColor)
+
+  if (!playerId) {
+    return {
+      avatar: null,
+      colorTexture: sanitizedFallback ? getSolidColorTexture(sanitizedFallback) : null,
+      color: sanitizedFallback ?? null
+    }
+  }
+
+  if (playerId.startsWith(BOT_OWNER_PREFIX)) {
+    const botColor = sanitizeColorString(
+      sanitizedFallback ?? BOT_OWNER_COLOR ?? DEFAULT_DEFENDER_TEXTURE_COLOR
+    )
+    return {
+      avatar: null,
+      colorTexture: botColor ? getSolidColorTexture(botColor) : null,
+      color: botColor ?? null
+    }
+  }
+
+  const player = playersById.get(playerId) ?? null
+
+  const avatarUrl =
+    typeof player?.avatarUrl === 'string' && player.avatarUrl.trim() !== ''
+      ? player.avatarUrl.trim()
+      : null
+
+  if (avatarUrl) {
+    return {
+      avatar: avatarUrl,
+      colorTexture: null,
+      color: sanitizedFallback ?? null
+    }
+  }
+
+  const playerColor =
+    typeof player?.color === 'string' && player.color.trim() !== ''
+      ? player.color.trim()
+      : null
+
+  const resolvedColor = sanitizeColorString(playerColor ?? sanitizedFallback ?? null)
+  return {
+    avatar: null,
+    colorTexture: resolvedColor ? getSolidColorTexture(resolvedColor) : null,
+    color: resolvedColor ?? null
+  }
+}
+
 const activeAttackByTerritory = computed(() => {
   const map = new Map<string, ActiveAttack>()
   ;(props.activeAttacks ?? []).forEach((attack) => {
@@ -214,7 +326,7 @@ const activeAttackByTerritory = computed(() => {
   return map
 })
 
-const territoryTextureDescriptors = computed(() => {
+const territoryTextureDescriptors = computed<TerritoryTextureDescriptor[]>(() => {
   const playersById = new Map(props.players.map((player) => [player.id, player]))
   return props.territories.map((territory) => {
     const territoryId =
@@ -223,26 +335,40 @@ const territoryTextureDescriptors = computed(() => {
       typeof territory.ownerId === 'string' && territory.ownerId.trim() !== ''
         ? territory.ownerId.trim()
         : null
-    const owner = ownerId ? playersById.get(ownerId) ?? null : null
-    const ownerAvatar =
-      typeof owner?.avatarUrl === 'string' && owner.avatarUrl.trim() !== ''
-        ? owner.avatarUrl.trim()
-        : null
     const activeAttack = territoryId ? activeAttackByTerritory.value.get(territoryId) ?? null : null
     const attackerId =
       typeof activeAttack?.attackerId === 'string' && activeAttack.attackerId.trim() !== ''
         ? activeAttack.attackerId.trim()
         : null
     const attacker = attackerId ? playersById.get(attackerId) ?? null : null
-    const attackerAvatar =
-      typeof attacker?.avatarUrl === 'string' && attacker.avatarUrl.trim() !== ''
-        ? attacker.avatarUrl.trim()
+
+    const stateInfo = territoryId ? territoryState.value.get(territoryId) ?? null : null
+    const ownerColor =
+      typeof stateInfo?.ownerColor === 'string' && stateInfo.ownerColor.trim() !== ''
+        ? stateInfo.ownerColor.trim()
         : null
+
+    const ownerTexture = resolveParticipantTexture(
+      ownerId,
+      playersById,
+      ownerColor ?? (ownerId?.startsWith(BOT_OWNER_PREFIX) ? BOT_OWNER_COLOR : null)
+    )
+
+    const attackerColor =
+      attackerId?.startsWith(BOT_OWNER_PREFIX) === true
+        ? BOT_OWNER_COLOR
+        : typeof attacker?.color === 'string' && attacker.color.trim() !== ''
+          ? attacker.color.trim()
+          : null
+
+    const attackerTexture = resolveParticipantTexture(attackerId, playersById, attackerColor)
 
     return {
       territoryId,
-      ownerAvatar,
-      attackerAvatar,
+      ownerId,
+      attackerId,
+      owner: ownerTexture,
+      attacker: attackerTexture,
       isUnderAttack: Boolean(activeAttack)
     }
   })
@@ -253,9 +379,11 @@ const territoryTextureSignature = computed(() =>
     .map((descriptor) =>
       [
         descriptor.territoryId,
-        descriptor.ownerAvatar ?? '',
+        descriptor.ownerId ?? '',
+        descriptor.owner.avatar ?? descriptor.owner.color ?? '',
         descriptor.isUnderAttack ? 'attack' : 'idle',
-        descriptor.attackerAvatar ?? ''
+        descriptor.attackerId ?? '',
+        descriptor.attacker.avatar ?? descriptor.attacker.color ?? ''
       ].join(':')
     )
     .join('|')
@@ -263,6 +391,17 @@ const territoryTextureSignature = computed(() =>
 
 const splitTextureCache = new Map<string, string>()
 const splitTexturePromiseCache = new Map<string, Promise<string>>()
+
+const territoryTextureDescriptorLookup = computed(() => {
+  const lookup = new Map<string, TerritoryTextureDescriptor>()
+  territoryTextureDescriptors.value.forEach((descriptor) => {
+    if (!descriptor.territoryId) {
+      return
+    }
+    lookup.set(descriptor.territoryId, descriptor)
+  })
+  return lookup
+})
 
 const loadImage = (url: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
@@ -413,25 +552,54 @@ const syncTerritoryTextures = () => {
     }
     seen.add(territoryId)
 
-    const { ownerAvatar, attackerAvatar, isUnderAttack } = descriptor
+    const { owner, attacker, isUnderAttack } = descriptor
 
-    if (isUnderAttack && ownerAvatar && attackerAvatar) {
-      const key = `split:${ownerAvatar}|${attackerAvatar}`
+    if (isUnderAttack) {
+      const defenderSource =
+        owner.avatar ??
+        owner.colorTexture ??
+        (owner.color
+          ? getSolidColorTexture(owner.color)
+          : getSolidColorTexture(DEFAULT_DEFENDER_TEXTURE_COLOR)) ??
+        getSolidColorTexture(DEFAULT_DEFENDER_TEXTURE_COLOR)
+
+      const attackerSource =
+        attacker.avatar ??
+        attacker.colorTexture ??
+        (attacker.color
+          ? getSolidColorTexture(attacker.color)
+          : getSolidColorTexture(DEFAULT_ATTACKER_TEXTURE_COLOR)) ??
+        getSolidColorTexture(DEFAULT_ATTACKER_TEXTURE_COLOR)
+
+      if (!defenderSource || !attackerSource) {
+        if (territoryTextureKeys.value[territoryId]) {
+          const { [territoryId]: _removedKey, ...restKeys } = territoryTextureKeys.value
+          territoryTextureKeys.value = restKeys
+        }
+        if (territoryTextures.value[territoryId]) {
+          const { [territoryId]: _removedTexture, ...restTextures } = territoryTextures.value
+          territoryTextures.value = restTextures
+        }
+        pendingSplitTextureTokens.delete(territoryId)
+        return
+      }
+
+      const key = `split:${defenderSource}|${attackerSource}`
       if (
         territoryTextureKeys.value[territoryId] === key &&
         (territoryTextures.value[territoryId] || pendingSplitTextureTokens.has(territoryId))
       ) {
         return
       }
-      generateSplitTexture(territoryId, key, ownerAvatar, attackerAvatar)
+      generateSplitTexture(territoryId, key, defenderSource, attackerSource)
       return
     }
 
-    if (ownerAvatar) {
-      const key = `single:${ownerAvatar}`
+    if (owner.avatar) {
+      const key = `single:${owner.avatar}`
       if (
         territoryTextureKeys.value[territoryId] !== key ||
-        territoryTextures.value[territoryId] !== ownerAvatar
+        territoryTextures.value[territoryId] !== owner.avatar
       ) {
         territoryTextureKeys.value = {
           ...territoryTextureKeys.value,
@@ -439,7 +607,7 @@ const syncTerritoryTextures = () => {
         }
         territoryTextures.value = {
           ...territoryTextures.value,
-          [territoryId]: ownerAvatar
+          [territoryId]: owner.avatar
         }
       }
       pendingSplitTextureTokens.delete(territoryId)
@@ -620,7 +788,7 @@ const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
 
   props.territories.forEach((territory) => {
     const ownerIdRaw = typeof territory.ownerId === 'string' ? territory.ownerId.trim() : ''
-    if (!ownerIdRaw || ownerIdRaw.startsWith(BOT_OWNER_PREFIX)) {
+    if (!ownerIdRaw) {
       return
     }
 
@@ -631,14 +799,16 @@ const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
         ? owner.avatarUrl.trim()
         : null
 
-    if (!avatarUrl) {
-      return
-    }
-
     const territoryKey =
       typeof territory.id === 'string' && territory.id.trim() !== '' ? territory.id.trim() : null
+
+    const descriptor =
+      territoryKey ? territoryTextureDescriptorLookup.value.get(territoryKey) ?? null : null
+
     const textureSource =
-      (territoryKey && territoryTextures.value[territoryKey]) || avatarUrl
+      (territoryKey && territoryTextures.value[territoryKey]) ||
+      descriptor?.owner.avatar ||
+      avatarUrl
 
     if (!textureSource) {
       return
@@ -837,31 +1007,6 @@ const stopAttackHighlight = () => {
   attackHighlightTimer = null
   attackHighlightPhase.value = 0
 }
-
-const underAttackHighlightPhase = ref(0)
-let underAttackHighlightTimer: number | null = null
-
-const startUnderAttackHighlight = () => {
-  if (underAttackHighlightTimer !== null) {
-    return
-  }
-  if (typeof window === 'undefined') {
-    return
-  }
-  underAttackHighlightTimer = window.setInterval(() => {
-    underAttackHighlightPhase.value = (underAttackHighlightPhase.value + 1) % 2
-  }, 520)
-}
-
-const stopUnderAttackHighlight = () => {
-  if (underAttackHighlightTimer === null) return
-  if (typeof window !== 'undefined') {
-    window.clearInterval(underAttackHighlightTimer)
-  }
-  underAttackHighlightTimer = null
-  underAttackHighlightPhase.value = 0
-}
-
 
 const colorTrigger = computed(() =>
   props.territories
@@ -1115,20 +1260,15 @@ const createUnderAttackLayer = () =>
     data: underAttackFeatureCollection.value,
     pickable: false,
     stroked: true,
-    filled: false,
+    filled: true,
     autoHighlight: false,
     lineWidthUnits: 'pixels',
     lineWidthMinPixels: 3.5,
-    getLineColor: () =>
-      underAttackHighlightPhase.value === 0
-        ? UNDER_ATTACK_BORDER_COLOR_PRIMARY
-        : UNDER_ATTACK_BORDER_COLOR_SECONDARY,
+    getLineColor: () => UNDER_ATTACK_BORDER_COLOR_SECONDARY,
+    getFillColor: () => UNDER_ATTACK_FILL_COLOR,
     parameters: {
       depthTest: false
-    } as Record<string, unknown>,
-    updateTriggers: {
-      getLineColor: underAttackHighlightPhase.value
-    }
+    } as Record<string, unknown>
   })
 
 const DARK_TEXT_CURRENT: Color = [15, 23, 42, 255] // tailwind slate-900
@@ -1254,30 +1394,6 @@ watch(attackHighlightPhase, () => {
 })
 
 watch(
-  () => underAttackFeatures.value.length,
-  (count) => {
-    if (count > 0) {
-      startUnderAttackHighlight()
-    } else {
-      stopUnderAttackHighlight()
-    }
-    if (deckInstance) {
-      deckInstance.setProps({
-        layers: layers.value
-      })
-    }
-  },
-  { immediate: true }
-)
-
-watch(underAttackHighlightPhase, () => {
-  if (!deckInstance) return
-  deckInstance.setProps({
-    layers: layers.value
-  })
-})
-
-watch(
   () => props.disableInteraction,
   () => {
     if (!deckInstance) return
@@ -1314,7 +1430,6 @@ watch(viewZoom, () => {
 
 onBeforeUnmount(() => {
   stopAttackHighlight()
-  stopUnderAttackHighlight()
   pendingSplitTextureTokens.clear()
   splitTexturePromiseCache.clear()
   splitTextureCache.clear()
