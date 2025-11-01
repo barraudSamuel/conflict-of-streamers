@@ -417,6 +417,31 @@ export const useGameView = (gameId: string) => {
 
   const attackCTAEnabled = computed(() => canLaunchAttack.value && !attackLoading.value)
 
+  const attackableTerritoryIds = computed<string[]>(() => {
+    const origin = selectedOwnedTerritory.value
+    if (!origin) return []
+
+    const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
+    if (!neighbors.length) return []
+
+    const attackable: string[] = []
+    neighbors.forEach((neighborId) => {
+      if (typeof neighborId !== 'string' || neighborId.trim() === '') return
+      const candidate = getTerritory(neighborId)
+      if (!candidate) return
+      if (candidate.ownerId === currentPlayerId.value) return
+      if (candidate.isUnderAttack) return
+      attackable.push(candidate.id)
+    })
+
+    const target = targetTerritory.value
+    if (target && attackable.includes(target.id)) {
+      return [target.id]
+    }
+
+    return attackable
+  })
+
   const attackDisabledReason = computed(() => {
     if (attackLoading.value) return 'validation'
     if (!playerContext.value?.playerId) return 'no-player'
@@ -1196,14 +1221,8 @@ export const useGameView = (gameId: string) => {
 
     if (territory.ownerId === currentPlayerId.value) {
       selectedOwnedTerritoryId.value = territoryId
+      targetTerritoryId.value = null
 
-      if (
-        targetTerritoryId.value &&
-        (!Array.isArray(territory.neighbors) ||
-          !territory.neighbors.includes(targetTerritoryId.value))
-      ) {
-        targetTerritoryId.value = null
-      }
       return
     }
 
@@ -1605,6 +1624,7 @@ export const useGameView = (gameId: string) => {
     otherPlayerLegendEntries,
     selectedOwnedTerritory,
     targetTerritory,
+    attackableTerritoryIds,
     attackError,
     reinforcementError,
     showAttackActions,

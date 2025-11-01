@@ -46,6 +46,7 @@ const props = defineProps<{
   territories: LobbyTerritory[]
   players: LobbyPlayer[]
   currentPlayerId: string
+  attackableTerritoryIds?: string[] | null
   disableInteraction?: boolean
   appearance?: 'lobby' | 'game'
   activeAttacks?: ActiveAttack[]
@@ -84,6 +85,10 @@ const CURRENT_PLAYER_FALLBACK_COLOR: Color = [34, 197, 94, 220]
 const BOT_OWNER_PREFIX = 'bot:'
 const BOT_OWNER_COLOR = '#a8a29e'
 const BOT_HIGHLIGHT_COLOR: Color = [100, 116, 139, 210]
+const ATTACK_TARGET_BORDER_COLOR_PRIMARY: Color = [248, 113, 113, 255] // tailwind rose-400
+const ATTACK_TARGET_BORDER_COLOR_SECONDARY: Color = [251, 191, 36, 220] // tailwind amber-400
+const ATTACK_TARGET_FILL_COLOR_PRIMARY: Color = [248, 113, 113, 110]
+const ATTACK_TARGET_FILL_COLOR_SECONDARY: Color = [248, 113, 113, 60]
 const MIN_POLYGON_EXTENT = 1e-6
 
 const toColorTuple = (color: Color): [number, number, number, number] => {
@@ -437,6 +442,65 @@ const territoryAvatarMeshes = computed<AvatarMeshDatum[]>(() => {
   return meshes
 })
 
+const attackableTargetSet = computed<Set<string>>(() => {
+  if (!Array.isArray(props.attackableTerritoryIds)) {
+    return new Set()
+  }
+
+  const normalized = props.attackableTerritoryIds
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value): value is string => Boolean(value))
+
+  return new Set(normalized)
+})
+
+const attackableFeatures = computed<LobbyTerritoryFeature[]>(() => {
+  if (!attackableTargetSet.value.size) {
+    return []
+  }
+
+  const unique = new Map<string, LobbyTerritoryFeature>()
+
+  attackableTargetSet.value.forEach((territoryId) => {
+    const feature = resolveTerritoryFeature(territoryId)
+    const key = feature?.properties?.id
+    if (feature && key && !unique.has(key)) {
+      unique.set(key, feature)
+    }
+  })
+
+  return Array.from(unique.values())
+})
+
+const attackableFeatureCollection = computed<LobbyTerritoryCollection>(() => ({
+  type: 'FeatureCollection',
+  features: attackableFeatures.value
+}))
+
+const attackHighlightPhase = ref(0)
+let attackHighlightTimer: number | null = null
+
+const startAttackHighlight = () => {
+  if (attackHighlightTimer !== null) {
+    return
+  }
+  if (typeof window === 'undefined') {
+    return
+  }
+  attackHighlightTimer = window.setInterval(() => {
+    attackHighlightPhase.value = (attackHighlightPhase.value + 1) % 2
+  }, 520)
+}
+
+const stopAttackHighlight = () => {
+  if (attackHighlightTimer === null) return
+  if (typeof window !== 'undefined') {
+    window.clearInterval(attackHighlightTimer)
+  }
+  attackHighlightTimer = null
+  attackHighlightPhase.value = 0
+}
+
 
 const colorTrigger = computed(() =>
   props.territories
@@ -641,6 +705,33 @@ const createGeoLayer = () =>
     }
   })
 
+const createAttackHighlightLayer = () =>
+  new GeoJsonLayer<any>({
+    id: 'attackable-territories-highlight',
+    data: attackableFeatureCollection.value,
+    pickable: false,
+    stroked: true,
+    filled: true,
+    autoHighlight: false,
+    lineWidthUnits: 'pixels',
+    lineWidthMinPixels: 3,
+    getLineColor: () =>
+      attackHighlightPhase.value === 0
+        ? ATTACK_TARGET_BORDER_COLOR_PRIMARY
+        : ATTACK_TARGET_BORDER_COLOR_SECONDARY,
+    getFillColor: () =>
+      attackHighlightPhase.value === 0
+        ? ATTACK_TARGET_FILL_COLOR_PRIMARY
+        : ATTACK_TARGET_FILL_COLOR_SECONDARY,
+    parameters: {
+      depthTest: false
+    } as Record<string, unknown>,
+    updateTriggers: {
+      getLineColor: attackHighlightPhase.value,
+      getFillColor: attackHighlightPhase.value
+    }
+  })
+
 const DARK_TEXT_CURRENT: Color = [15, 23, 42, 255] // tailwind slate-900
 const DARK_TEXT_BOT: Color = [68, 64, 60, 255] // tailwind stone-700
 const DARK_TEXT_DEFAULT: Color = [87, 83, 78, 255] // tailwind stone-600
@@ -698,6 +789,9 @@ const createAvatarMeshLayers = () =>
 
 const layers = computed((): any[] => {
   const baseLayers: any[] = [createGeoLayer()]
+  if (attackableFeatures.value.length > 0) {
+    baseLayers.push(createAttackHighlightLayer())
+  }
   if (territoryAvatarMeshes.value.length > 0) {
     baseLayers.push(...createAvatarMeshLayers())
   }
@@ -729,6 +823,30 @@ onMounted(() => {
         }
       }
     }
+  })
+})
+
+watch(
+  () => attackableFeatures.value.length,
+  (count) => {
+    if (count > 0) {
+      startAttackHighlight()
+    } else {
+      stopAttackHighlight()
+    }
+    if (deckInstance) {
+      deckInstance.setProps({
+        layers: layers.value
+      })
+    }
+  },
+  { immediate: true }
+)
+
+watch(attackHighlightPhase, () => {
+  if (!deckInstance) return
+  deckInstance.setProps({
+    layers: layers.value
   })
 })
 
@@ -768,6 +886,7 @@ watch(viewZoom, () => {
 })
 
 onBeforeUnmount(() => {
+  stopAttackHighlight()
   if (deckInstance) {
     deckInstance.finalize()
     deckInstance = null

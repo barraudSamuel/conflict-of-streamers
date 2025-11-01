@@ -47,6 +47,7 @@ const {
   otherPlayerLegendEntries,
   selectedOwnedTerritory,
   targetTerritory,
+  attackableTerritoryIds,
   attackError,
   reinforcementError,
   showAttackActions,
@@ -232,6 +233,7 @@ const winnerConfettiOptions = {
             :territories="game.territories ?? []"
             :players="game.players ?? []"
             :current-player-id="currentPlayerId"
+            :attackable-territory-ids="attackableTerritoryIds"
             :active-attacks="activeAttacks"
             :active-reinforcements="activeReinforcements"
             :disable-interaction="false"
