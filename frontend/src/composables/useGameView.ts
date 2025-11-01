@@ -418,6 +418,8 @@ export const useGameView = (gameId: string) => {
   const attackCTAEnabled = computed(() => canLaunchAttack.value && !attackLoading.value)
 
   const attackableTerritoryIds = computed<string[]>(() => {
+    if (currentAttack.value) return []
+
     const origin = selectedOwnedTerritory.value
     if (!origin) return []
 
@@ -1212,6 +1214,11 @@ export const useGameView = (gameId: string) => {
   }
 
   const handleTerritorySelect = (territoryId: string) => {
+    if (currentAttack.value) {
+      attackError.value = 'Une attaque est déjà en cours.'
+      return
+    }
+
     attackError.value = ''
     reinforcementError.value = ''
 

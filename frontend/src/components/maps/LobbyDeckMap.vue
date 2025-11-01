@@ -19,6 +19,7 @@ interface LobbyTerritory {
   name?: string | null
   isReinforced?: boolean | null
   reinforcementBonus?: number | null
+  isUnderAttack?: boolean | null
 }
 
 interface LobbyPlayer {
@@ -89,6 +90,8 @@ const ATTACK_TARGET_BORDER_COLOR_PRIMARY: Color = [248, 113, 113, 255] // tailwi
 const ATTACK_TARGET_BORDER_COLOR_SECONDARY: Color = [251, 191, 36, 220] // tailwind amber-400
 const ATTACK_TARGET_FILL_COLOR_PRIMARY: Color = [248, 113, 113, 110]
 const ATTACK_TARGET_FILL_COLOR_SECONDARY: Color = [248, 113, 113, 60]
+const UNDER_ATTACK_BORDER_COLOR_PRIMARY: Color = [248, 113, 113, 255] // tailwind rose-400
+const UNDER_ATTACK_BORDER_COLOR_SECONDARY: Color = [220, 38, 38, 255] // tailwind red-600
 const MIN_POLYGON_EXTENT = 1e-6
 
 const toColorTuple = (color: Color): [number, number, number, number] => {
@@ -146,6 +149,7 @@ const territoryState = computed(() => {
       isBot: boolean
       isReinforced: boolean
       reinforcementBonus: number
+      isUnderAttack: boolean
     }
   >()
 
@@ -167,7 +171,8 @@ const territoryState = computed(() => {
       isReinforced: Boolean(territory.isReinforced),
       reinforcementBonus: Number.isFinite(territory.reinforcementBonus)
         ? Number(territory.reinforcementBonus)
-        : 0
+        : 0,
+      isUnderAttack: Boolean(territory.isUnderAttack)
     }
 
     const keys = new Set<string>()
@@ -477,6 +482,38 @@ const attackableFeatureCollection = computed<LobbyTerritoryCollection>(() => ({
   features: attackableFeatures.value
 }))
 
+const underAttackTerritorySet = computed<Set<string>>(() => {
+  const set = new Set<string>()
+  props.territories.forEach((territory) => {
+    if (territory?.id && Boolean(territory.isUnderAttack)) {
+      set.add(String(territory.id))
+    }
+  })
+  return set
+})
+
+const underAttackFeatures = computed<LobbyTerritoryFeature[]>(() => {
+  if (!underAttackTerritorySet.value.size) {
+    return []
+  }
+  const unique = new Map<string, LobbyTerritoryFeature>()
+
+  underAttackTerritorySet.value.forEach((territoryId) => {
+    const feature = resolveTerritoryFeature(territoryId)
+    const key = feature?.properties?.id
+    if (feature && key && !unique.has(key)) {
+      unique.set(key, feature)
+    }
+  })
+
+  return Array.from(unique.values())
+})
+
+const underAttackFeatureCollection = computed<LobbyTerritoryCollection>(() => ({
+  type: 'FeatureCollection',
+  features: underAttackFeatures.value
+}))
+
 const attackHighlightPhase = ref(0)
 let attackHighlightTimer: number | null = null
 
@@ -499,6 +536,30 @@ const stopAttackHighlight = () => {
   }
   attackHighlightTimer = null
   attackHighlightPhase.value = 0
+}
+
+const underAttackHighlightPhase = ref(0)
+let underAttackHighlightTimer: number | null = null
+
+const startUnderAttackHighlight = () => {
+  if (underAttackHighlightTimer !== null) {
+    return
+  }
+  if (typeof window === 'undefined') {
+    return
+  }
+  underAttackHighlightTimer = window.setInterval(() => {
+    underAttackHighlightPhase.value = (underAttackHighlightPhase.value + 1) % 2
+  }, 520)
+}
+
+const stopUnderAttackHighlight = () => {
+  if (underAttackHighlightTimer === null) return
+  if (typeof window !== 'undefined') {
+    window.clearInterval(underAttackHighlightTimer)
+  }
+  underAttackHighlightTimer = null
+  underAttackHighlightPhase.value = 0
 }
 
 
@@ -676,18 +737,15 @@ const getCursor = ({
 
 const selectableTerritoryIds = computed(() => new Set(props.territories.map((territory) => territory.id)))
 
-const createGeoLayer = () =>
+const createFillLayer = () =>
   new GeoJsonLayer<any>({
-    id: 'lobby-territories',
+    id: 'lobby-territories-fill',
     data: featureCollection,
     pickable: !props.disableInteraction,
-    stroked: true,
+    stroked: false,
     filled: true,
     autoHighlight: true,
-    highlightColor: [255, 255, 255, 120],
-    lineWidthUnits: 'pixels',
-    lineWidthMinPixels: 1.5,
-    getLineColor: (feature: any) => computeLineColor(feature as DeckFeature),
+    highlightColor: [255, 255, 255, 140],
     getFillColor: (feature: any) => computeFillColor(feature as DeckFeature),
     parameters: {
       depthTest: false
@@ -700,7 +758,26 @@ const createGeoLayer = () =>
       }
     },
     updateTriggers: {
-      getFillColor: colorTrigger.value,
+      getFillColor: colorTrigger.value
+    }
+  })
+
+const createBorderLayer = () =>
+  new GeoJsonLayer<any>({
+    id: 'lobby-territories-borders',
+    data: featureCollection,
+    pickable: false,
+    stroked: true,
+    filled: false,
+    autoHighlight: false,
+    lineWidthUnits: 'pixels',
+    lineWidthMinPixels: 2.2,
+    lineWidthMaxPixels: 6,
+    getLineColor: (feature: any) => computeLineColor(feature as DeckFeature),
+    parameters: {
+      depthTest: false
+    } as Record<string, unknown>,
+    updateTriggers: {
       getLineColor: colorTrigger.value
     }
   })
@@ -729,6 +806,28 @@ const createAttackHighlightLayer = () =>
     updateTriggers: {
       getLineColor: attackHighlightPhase.value,
       getFillColor: attackHighlightPhase.value
+    }
+  })
+
+const createUnderAttackLayer = () =>
+  new GeoJsonLayer<any>({
+    id: 'under-attack-territories-highlight',
+    data: underAttackFeatureCollection.value,
+    pickable: false,
+    stroked: true,
+    filled: false,
+    autoHighlight: false,
+    lineWidthUnits: 'pixels',
+    lineWidthMinPixels: 3.5,
+    getLineColor: () =>
+      underAttackHighlightPhase.value === 0
+        ? UNDER_ATTACK_BORDER_COLOR_PRIMARY
+        : UNDER_ATTACK_BORDER_COLOR_SECONDARY,
+    parameters: {
+      depthTest: false
+    } as Record<string, unknown>,
+    updateTriggers: {
+      getLineColor: underAttackHighlightPhase.value
     }
   })
 
@@ -788,12 +887,16 @@ const createAvatarMeshLayers = () =>
   )
 
 const layers = computed((): any[] => {
-  const baseLayers: any[] = [createGeoLayer()]
+  const baseLayers: any[] = [createFillLayer()]
+  if (territoryAvatarMeshes.value.length > 0) {
+    baseLayers.push(...createAvatarMeshLayers())
+  }
+  baseLayers.push(createBorderLayer())
   if (attackableFeatures.value.length > 0) {
     baseLayers.push(createAttackHighlightLayer())
   }
-  if (territoryAvatarMeshes.value.length > 0) {
-    baseLayers.push(...createAvatarMeshLayers())
+  if (underAttackFeatures.value.length > 0) {
+    baseLayers.push(createUnderAttackLayer())
   }
   if (showDefenseOverlay.value) {
     baseLayers.push(createDefenseLayer())
@@ -851,6 +954,30 @@ watch(attackHighlightPhase, () => {
 })
 
 watch(
+  () => underAttackFeatures.value.length,
+  (count) => {
+    if (count > 0) {
+      startUnderAttackHighlight()
+    } else {
+      stopUnderAttackHighlight()
+    }
+    if (deckInstance) {
+      deckInstance.setProps({
+        layers: layers.value
+      })
+    }
+  },
+  { immediate: true }
+)
+
+watch(underAttackHighlightPhase, () => {
+  if (!deckInstance) return
+  deckInstance.setProps({
+    layers: layers.value
+  })
+})
+
+watch(
   () => props.disableInteraction,
   () => {
     if (!deckInstance) return
@@ -887,6 +1014,7 @@ watch(viewZoom, () => {
 
 onBeforeUnmount(() => {
   stopAttackHighlight()
+  stopUnderAttackHighlight()
   if (deckInstance) {
     deckInstance.finalize()
     deckInstance = null
