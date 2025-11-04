@@ -8,6 +8,7 @@ import GameActionHistoryToast from '@/components/game/GameActionHistoryToast.vue
 import GameLegend from '@/components/game/GameLegend.vue'
 import GameLossDialog from '@/components/game/GameLossDialog.vue'
 import GameWinnerDialog from '@/components/game/GameWinnerDialog.vue'
+import GameAttackSummaryDialog from '@/components/game/GameAttackSummaryDialog.vue'
 import GameCommandPanel from '@/components/game/GameCommandPanel.vue'
 import {useGameView, BOT_LEGEND_COLOR} from '@/composables/useGameView'
 
@@ -73,6 +74,8 @@ const {
   attackLoading,
   reinforcementLoading,
   lastAttackResult,
+  attackSummaryStats,
+  attackSummaryVisible,
   selectedReinforcement,
   cancelSelection,
   launchAttack,
@@ -82,7 +85,8 @@ const {
   formatDuration,
   getPlayerUsername,
   currentAttack,
-  defendingAttack
+  defendingAttack,
+  closeAttackSummary
 } = useGameView(gameId)
 
 const goHome = () => {
@@ -261,6 +265,13 @@ const winnerConfettiOptions = {
           :leaving-game="leavingGame"
           @continue="closeWinnerModal"
           @leave="handleLeaveGame"
+      />
+
+      <GameAttackSummaryDialog
+          v-model:open="attackSummaryVisible"
+          :stats="attackSummaryStats"
+          :get-player-username="getPlayerUsername"
+          @close="closeAttackSummary"
       />
 
       <div class="pointer-events-none absolute inset-0 z-30 flex flex-col px-4">

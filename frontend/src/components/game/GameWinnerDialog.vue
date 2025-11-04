@@ -30,7 +30,7 @@ const emit = defineEmits<{
   <Dialog :open="open" @update:open="emit('update:open', $event)">
     <DialogContent
         :overlay-class="'bg-slate-950/80 backdrop-blur'"
-        class="w-full !max-w-3xl space-y-6 border-emerald-400/30 bg-card/90 p-6 sm:max-h-[85vh] sm:overflow-y-auto sm:p-10 z-60"
+        class="w-full !max-w-3xl space-y-6 border-emerald-400/30 bg-card/90 p-6 sm:max-h-[85vh] sm:overflow-y-auto sm:p-10"
     >
       <DialogHeader class="items-start gap-4 text-left">
         <div class="flex items-start gap-4">

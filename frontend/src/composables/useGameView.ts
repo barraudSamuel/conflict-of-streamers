@@ -23,6 +23,7 @@ import type {
   PlayerSummary,
   RankingEntry,
   AttackStats,
+  AttackSummaryStats,
   ReinforcementStats
 } from '@/types/game'
 
@@ -90,6 +91,8 @@ export const useGameView = (gameId: string) => {
   const reinforcementLoading = ref(false)
   const cancelReinforcementLoading = ref(false)
   const lastAttackResult = ref<AttackResult | null>(null)
+  const attackSummary = ref<any | null>(null)
+  const attackSummaryVisible = ref(false)
   const actionHistory = ref<ActionLogEntry[]>([])
   const historyClock = ref(Date.now())
 
@@ -522,6 +525,38 @@ export const useGameView = (gameId: string) => {
       attackPoints: Number(attack.attackPoints) || 0,
       defensePoints: Number(attack.defensePoints) || 0,
       baseDefense: Number(attack.baseDefense) || 0,
+      topAttackers,
+      topDefenders
+    }
+  })
+
+  const attackSummaryStats = computed<AttackSummaryStats | null>(() => {
+    const attack = attackSummary.value
+    if (!attack) return null
+
+    const attackerParticipants =
+      typeof attack.participantCount?.attackers === 'number'
+        ? attack.participantCount.attackers
+        : 0
+    const defenderParticipants =
+      typeof attack.participantCount?.defenders === 'number'
+        ? attack.participantCount.defenders
+        : 0
+    const topAttackers = Array.isArray(attack.topContributors?.attackers)
+      ? attack.topContributors.attackers.slice(0, 5).map(normalizeParticipantSummary)
+      : []
+    const topDefenders = Array.isArray(attack.topContributors?.defenders)
+      ? attack.topContributors.defenders.slice(0, 5).map(normalizeParticipantSummary)
+      : []
+
+    return {
+      attack,
+      attackerMessages: Number(attack.attackMessages) || 0,
+      defenderMessages: Number(attack.defenseMessages) || 0,
+      attackerParticipants,
+      defenderParticipants,
+      attackPoints: Number(attack.attackPoints) || 0,
+      defensePoints: Number(attack.defensePoints) || 0,
       topAttackers,
       topDefenders
     }
@@ -1041,6 +1076,11 @@ export const useGameView = (gameId: string) => {
               attack: message.attack,
               outcome
             }
+            attackSummary.value = message.attack
+            attackSummaryVisible.value = true
+          } else {
+            attackSummary.value = null
+            attackSummaryVisible.value = false
           }
         }
         break
@@ -1412,6 +1452,10 @@ export const useGameView = (gameId: string) => {
     })
   }
 
+  const closeAttackSummary = () => {
+    attackSummaryVisible.value = false
+  }
+
   const handleTabKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'Tab') return
     event.preventDefault()
@@ -1434,6 +1478,8 @@ export const useGameView = (gameId: string) => {
         hasOwnedTerritory.value = false
         lossModalVisible.value = false
         hadMultipleHumanPlayers.value = false
+        attackSummaryVisible.value = false
+        attackSummary.value = null
         resetWinnerState()
         router.replace(`/lobby/${game.value.id}`)
       }
@@ -1657,6 +1703,9 @@ export const useGameView = (gameId: string) => {
     attackLoading,
     reinforcementLoading,
     lastAttackResult,
+    attackSummary,
+    attackSummaryStats,
+    attackSummaryVisible,
     selectedReinforcement,
     cancelSelection,
     launchAttack,
@@ -1666,6 +1715,7 @@ export const useGameView = (gameId: string) => {
     formatDuration,
     getPlayerUsername,
     currentAttack,
-    defendingAttack
+    defendingAttack,
+    closeAttackSummary
   }
 }

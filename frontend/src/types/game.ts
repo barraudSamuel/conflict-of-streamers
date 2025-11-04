@@ -51,6 +51,18 @@ export interface AttackStats {
   topDefenders: AttackParticipantSummary[]
 }
 
+export interface AttackSummaryStats {
+  attack: any
+  attackerMessages: number
+  defenderMessages: number
+  attackerParticipants: number
+  defenderParticipants: number
+  attackPoints: number
+  defensePoints: number
+  topAttackers: AttackParticipantSummary[]
+  topDefenders: AttackParticipantSummary[]
+}
+
 export interface ReinforcementStats {
   reinforcement: any
   remaining: number
