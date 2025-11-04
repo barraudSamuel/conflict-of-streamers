@@ -223,7 +223,7 @@ const winnerConfettiOptions = {
     <div v-else-if="game" class="relative min-h-screen">
       <div
           v-if="winnerModalVisible && winnerPlayerId && currentPlayerId === winnerPlayerId"
-          class="pointer-events-none absolute inset-0 z-60"
+          class="pointer-events-none absolute inset-0 z-[115]"
       >
         <vue-particles
             id="winner-confetti"
