@@ -28,7 +28,7 @@ export const useAudioManager = () => {
 
   const baseTheme = createAudioElement('/sfx/theme.mp3', true)
   const attackTheme = createAudioElement('/sfx/war_theme.mp3', true)
-  const warHorn = createAudioElement('/sfx/war_horn.mp4')
+  const warHorn = createAudioElement('/sfx/war_horn.mp3')
 
   const baseMix = ref(1)
   const attackMix = ref(0)
