@@ -2,7 +2,7 @@
 import {computed} from 'vue'
 import {Button} from '@/components/ui/button'
 import {Kbd} from '@/components/ui/kbd'
-import {LogOut, SignalHigh, SignalLow, Users} from 'lucide-vue-next'
+import {LogOut, SignalHigh, SignalLow, Users, Volume, Volume1, Volume2, VolumeX} from 'lucide-vue-next'
 
 const props = defineProps<{
   realtimeConnected: boolean
@@ -12,13 +12,24 @@ const props = defineProps<{
   socketError: string
   leaveError: string
   leavingGame: boolean
+  volumeLevel: number
+  muted: boolean
 }>()
 
 const emit = defineEmits<{
   (event: 'leave'): void
+  (event: 'toggle-audio'): void
+  (event: 'volume-change', value: number): void
 }>()
 
 const statusIcon = computed(() => (props.realtimeConnected ? SignalHigh : SignalLow))
+
+const volumeIcon = computed(() => {
+  if (props.muted || props.volumeLevel <= 0.01) return VolumeX
+  if (props.volumeLevel >= 0.66) return Volume2
+  if (props.volumeLevel >= 0.33) return Volume1
+  return Volume
+})
 </script>
 
 <template>
@@ -40,6 +51,27 @@ const statusIcon = computed(() => (props.realtimeConnected ? SignalHigh : Signal
     <div class="pointer-events-auto flex flex-wrap items-center gap-2 text-xs">
       <p v-if="leaveError" class="text-red-400">{{ leaveError }}</p>
       <p v-else-if="socketError" class="text-amber-300">{{ socketError }}</p>
+      <div
+          class="flex items-center gap-2 rounded-full bg-card/70 px-3 py-1 ring-2 ring-white/10 shadow-lg backdrop-blur">
+        <button
+            type="button"
+            class="inline-flex size-7 items-center justify-center rounded-full border border-white/10 bg-slate-800/60 text-slate-200 transition hover:bg-slate-700/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+            @click="emit('toggle-audio')"
+            :aria-label="props.muted ? 'Activer le son' : 'Couper le son'"
+        >
+          <component :is="volumeIcon" class="size-4"/>
+        </button>
+        <input
+            class="h-1 w-24 cursor-pointer accent-emerald-400"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            :value="Math.round(props.volumeLevel * 100)"
+            @input="emit('volume-change', Number(($event.target as HTMLInputElement).value) / 100)"
+            aria-label="Volume général"
+        />
+      </div>
       <Button
           variant="outline"
           size="sm"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {computed, onBeforeUnmount, onMounted, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {Button} from '@/components/ui/button'
 import LobbyDeckMap from '@/components/maps/LobbyDeckMap.vue'
@@ -11,6 +12,7 @@ import GameWinnerDialog from '@/components/game/GameWinnerDialog.vue'
 import GameAttackSummaryDialog from '@/components/game/GameAttackSummaryDialog.vue'
 import GameCommandPanel from '@/components/game/GameCommandPanel.vue'
 import {useGameView, BOT_LEGEND_COLOR} from '@/composables/useGameView'
+import {useAudioManager} from '@/composables/useAudioManager'
 
 const route = useRoute()
 const router = useRouter()
@@ -88,6 +90,114 @@ const {
   defendingAttack,
   closeAttackSummary
 } = useGameView(gameId)
+
+const {
+  masterVolume,
+  isMuted,
+  setMasterVolume,
+  toggleMute,
+  ensureBaseTheme,
+  startAttackTheme,
+  stopAttackTheme,
+  isBaseThemeActive,
+  playWarHorn
+} = useAudioManager()
+
+const resumeEvents = ['pointerdown', 'mousedown', 'touchstart', 'keydown', 'click'] as const
+
+function removeResumeListeners() {
+  if (typeof window === 'undefined') return
+  resumeEvents.forEach((event) => {
+    window.removeEventListener(event, resumeAudioAfterInteraction, true)
+  })
+}
+
+function setupResumeListeners() {
+  if (typeof window === 'undefined') return
+  removeResumeListeners()
+  resumeEvents.forEach((event) => {
+    window.addEventListener(event, resumeAudioAfterInteraction, {
+      capture: true,
+      passive: true
+    })
+  })
+}
+
+function resumeAudioAfterInteraction() {
+  ensureBaseTheme()
+  if (isBaseThemeActive()) {
+    removeResumeListeners()
+  }
+}
+
+watch(
+  () => loading.value,
+  (isLoading) => {
+    if (isLoading) return
+    ensureBaseTheme()
+    if (!isBaseThemeActive()) {
+      setupResumeListeners()
+    }
+  }
+)
+
+watch(isMuted, (mutedValue) => {
+  if (mutedValue) return
+  ensureBaseTheme()
+  if (!isBaseThemeActive()) {
+    setupResumeListeners()
+  }
+})
+
+onMounted(() => {
+  ensureBaseTheme()
+  if (!isBaseThemeActive()) {
+    setupResumeListeners()
+  }
+})
+
+onBeforeUnmount(() => {
+  removeResumeListeners()
+})
+
+const playerAttackTerritoryIds = computed(() => {
+  const currentPlayer = currentPlayerId.value
+  if (!currentPlayer) return []
+  return activeAttacks.value
+    .filter((entry) => {
+      if (!entry || typeof entry !== 'object') return false
+      return entry.attackerId === currentPlayer || entry.defenderId === currentPlayer
+    })
+    .map((entry) => (typeof entry?.territoryId === 'string' ? entry.territoryId : null))
+    .filter((territoryId): territoryId is string => Boolean(territoryId))
+    .sort()
+})
+
+const playerEngagedInAttack = computed(() => playerAttackTerritoryIds.value.length > 0)
+
+watch(
+  playerEngagedInAttack,
+  (engaged, previousEngaged) => {
+    if (engaged && !previousEngaged) {
+      startAttackTheme()
+      playWarHorn()
+    } else if (!engaged && previousEngaged) {
+      stopAttackTheme()
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  playerAttackTerritoryIds,
+  (current, previous) => {
+    const prev = Array.isArray(previous) ? previous : []
+    const hasNew = current.some((id) => !prev.includes(id))
+    if (playerEngagedInAttack.value && hasNew) {
+      playWarHorn()
+    }
+  }
+)
 
 const goHome = () => {
   router.push('/')
@@ -283,7 +393,11 @@ const winnerConfettiOptions = {
             :socket-error="socketError"
             :leave-error="leaveError"
             :leaving-game="leavingGame"
+            :volume-level="masterVolume"
+            :muted="isMuted"
             @leave="handleLeaveGame"
+            @toggle-audio="toggleMute"
+            @volume-change="setMasterVolume"
         />
 
         <GameActionHistoryToast
