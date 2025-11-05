@@ -224,6 +224,27 @@ export class Game {
     endGame() {
         this.status = 'finished';
         this.finishedAt = Date.now();
+
+        for (let attack of this.activeAttacks.values()) {
+            if (attack?.toTerritory) {
+                const defender = this.territories.get(attack.toTerritory);
+                if (defender) {
+                    defender.isUnderAttack = false;
+                }
+            }
+            if (attack?.fromTerritory) {
+                const origin = this.territories.get(attack.fromTerritory);
+                if (origin) {
+                    origin.isAttacking = false;
+                }
+            }
+        }
+
+        for (let territory of this.territories.values()) {
+            territory.isUnderAttack = false;
+            territory.isAttacking = false;
+        }
+
         this.activeAttacks.clear();
         this.activeReinforcements.clear();
     }
@@ -257,16 +278,44 @@ export class Game {
         if (territory) {
             territory.isUnderAttack = true;
         }
+        if (attack?.fromTerritory) {
+            const origin = this.territories.get(attack.fromTerritory);
+            if (origin) {
+                origin.isAttacking = true;
+            }
+        }
         this.activeAttacks.set(territoryId, attack);
     }
 
     // Retirer une attaque
     removeAttack(territoryId) {
+        const currentAttack = this.activeAttacks.get(territoryId);
+        if (currentAttack?.fromTerritory) {
+            const origin = this.territories.get(currentAttack.fromTerritory);
+            if (origin) {
+                origin.isAttacking = false;
+            }
+        }
         const territory = this.territories.get(territoryId);
         if (territory) {
             territory.isUnderAttack = false;
         }
         this.activeAttacks.delete(territoryId);
+    }
+
+    isTerritoryAttacking(territoryId) {
+        const territory = this.territories.get(territoryId);
+        if (territory?.isAttacking) {
+            return true;
+        }
+
+        for (let attack of this.activeAttacks.values()) {
+            if (attack.fromTerritory === territoryId) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     addReinforcement(territoryId, reinforcement) {
@@ -300,6 +349,7 @@ export class Game {
                 attackPower: 0,
                 defensePower: 0,
                 isUnderAttack: false,
+                isAttacking: false,
                 isReinforced: false,
                 reinforcementBonus: 0,
                 conqueredAt: null,

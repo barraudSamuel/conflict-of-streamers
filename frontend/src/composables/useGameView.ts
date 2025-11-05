@@ -411,8 +411,11 @@ export const useGameView = (gameId: string) => {
     const target = targetTerritory.value
     if (!origin || !target) return false
     if (selectedReinforcement.value) return false
+    if (origin.isUnderAttack) return false
+    if (origin.isAttacking) return false
     if (target.ownerId === currentPlayerId.value) return false
     if (target.isUnderAttack) return false
+    if (target.isAttacking) return false
 
     const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
     return neighbors.includes(target.id)
@@ -425,6 +428,7 @@ export const useGameView = (gameId: string) => {
 
     const origin = selectedOwnedTerritory.value
     if (!origin) return []
+    if (origin.isUnderAttack || origin.isAttacking) return []
 
     const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
     if (!neighbors.length) return []
@@ -436,6 +440,7 @@ export const useGameView = (gameId: string) => {
       if (!candidate) return
       if (candidate.ownerId === currentPlayerId.value) return
       if (candidate.isUnderAttack) return
+      if (candidate.isAttacking) return
       attackable.push(candidate.id)
     })
 
@@ -456,8 +461,11 @@ export const useGameView = (gameId: string) => {
     const target = targetTerritory.value
     if (!target) return 'no-target'
     if (selectedReinforcement.value) return 'origin-reinforcement'
+    if (origin.isUnderAttack) return 'origin-under-attack'
+    if (origin.isAttacking) return 'origin-attacking'
     if (target.ownerId === currentPlayerId.value) return 'target-owned'
     if (target.isUnderAttack) return 'target-under-attack'
+    if (target.isAttacking) return 'target-attacking'
     const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
     if (!neighbors.includes(target.id)) return 'not-neighbor'
     return null
@@ -469,6 +477,7 @@ export const useGameView = (gameId: string) => {
     if (!territory) return false
     if (territory.ownerId !== currentPlayerId.value) return false
     if (territory.isUnderAttack) return false
+    if (territory.isAttacking) return false
     if (selectedReinforcement.value) return false
     if (
       currentReinforcement.value &&
@@ -490,6 +499,7 @@ export const useGameView = (gameId: string) => {
     if (!territory) return 'no-territory'
     if (territory.ownerId !== currentPlayerId.value) return 'not-owner'
     if (territory.isUnderAttack) return 'under-attack'
+    if (territory.isAttacking) return 'attacking'
     if (selectedReinforcement.value) return 'already-reinforcing'
     if (
       currentReinforcement.value &&
@@ -700,9 +710,19 @@ export const useGameView = (gameId: string) => {
     }
 
     const territories = Array.isArray(current.territories)
-      ? current.territories.map((territory: any) =>
-          territory.id === territoryId ? { ...territory, isUnderAttack: true } : territory
-        )
+      ? current.territories.map((territory: any) => {
+          if (territory.id === territoryId) {
+            return { ...territory, isUnderAttack: true }
+          }
+          if (
+            incoming.fromTerritory &&
+            typeof incoming.fromTerritory === 'string' &&
+            territory.id === incoming.fromTerritory
+          ) {
+            return { ...territory, isAttacking: true }
+          }
+          return territory
+        })
       : current.territories
 
     game.value = {
@@ -720,10 +740,24 @@ export const useGameView = (gameId: string) => {
       ? current.activeAttacks.filter((entry: any) => entry.territoryId !== territoryId)
       : current.activeAttacks
 
+    const existingAttack = Array.isArray(current.activeAttacks)
+      ? current.activeAttacks.find((entry: any) => entry.territoryId === territoryId)
+      : null
+    const attackerTerritoryId = existingAttack?.fromTerritory
+
     const territories = Array.isArray(current.territories)
-      ? current.territories.map((territory: any) =>
-          territory.id === territoryId ? { ...territory, isUnderAttack: false } : territory
-        )
+      ? current.territories.map((territory: any) => {
+          if (territory.id === territoryId) {
+            return { ...territory, isUnderAttack: false }
+          }
+          if (
+            typeof attackerTerritoryId === 'string' &&
+            territory.id === attackerTerritoryId
+          ) {
+            return { ...territory, isAttacking: false }
+          }
+          return territory
+        })
       : current.territories
 
     game.value = {
@@ -1283,6 +1317,14 @@ export const useGameView = (gameId: string) => {
       cancelSelection()
       return
     }
+    if (origin.isUnderAttack) {
+      attackError.value = 'Ce territoire est en défense et ne peut pas attaquer.'
+      return
+    }
+    if (origin.isAttacking) {
+      attackError.value = 'Ce territoire mène déjà une attaque.'
+      return
+    }
 
     if (territory.ownerId === currentPlayerId.value) {
       attackError.value = 'Ce territoire vous appartient déjà.'
@@ -1297,6 +1339,11 @@ export const useGameView = (gameId: string) => {
 
     if (territory.isUnderAttack) {
       attackError.value = 'Ce territoire est déjà sous attaque.'
+      return
+    }
+
+    if (territory.isAttacking) {
+      attackError.value = 'Ce territoire participe déjà à une attaque.'
       return
     }
 

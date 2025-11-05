@@ -20,6 +20,7 @@ interface LobbyTerritory {
   isReinforced?: boolean | null
   reinforcementBonus?: number | null
   isUnderAttack?: boolean | null
+  isAttacking?: boolean | null
 }
 
 interface LobbyPlayer {
@@ -151,6 +152,7 @@ const territoryState = computed(() => {
       isReinforced: boolean
       reinforcementBonus: number
       isUnderAttack: boolean
+      isAttacking: boolean
     }
   >()
 
@@ -173,7 +175,8 @@ const territoryState = computed(() => {
       reinforcementBonus: Number.isFinite(territory.reinforcementBonus)
         ? Number(territory.reinforcementBonus)
         : 0,
-      isUnderAttack: Boolean(territory.isUnderAttack)
+      isUnderAttack: Boolean(territory.isUnderAttack),
+      isAttacking: Boolean(territory.isAttacking)
     }
 
     const keys = new Set<string>()
@@ -955,7 +958,10 @@ const attackableFeatureCollection = computed<LobbyTerritoryCollection>(() => ({
 const underAttackTerritorySet = computed<Set<string>>(() => {
   const set = new Set<string>()
   props.territories.forEach((territory) => {
-    if (territory?.id && Boolean(territory.isUnderAttack)) {
+    if (
+      territory?.id &&
+      (Boolean(territory.isUnderAttack) || Boolean(territory.isAttacking))
+    ) {
       set.add(String(territory.id))
     }
   })

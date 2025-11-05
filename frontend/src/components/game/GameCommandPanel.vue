@@ -108,10 +108,16 @@ const attackDisabledMessage = computed(() => {
       return 'Choisissez une cible adverse.'
     case 'origin-reinforcement':
       return 'Ce territoire est en renfort. Attendez la fin avant d\'attaquer.'
+    case 'origin-under-attack':
+      return 'Ce territoire est en défense et ne peut pas attaquer.'
+    case 'origin-attacking':
+      return 'Ce territoire mène déjà une attaque.'
     case 'target-owned':
       return 'Vous possédez déjà cette cible.'
     case 'target-under-attack':
       return 'La cible est déjà sous attaque.'
+    case 'target-attacking':
+      return 'La cible participe déjà à une attaque.'
     case 'not-neighbor':
       return 'La cible doit être limitrophe.'
     default:
@@ -131,6 +137,8 @@ const reinforcementDisabledMessage = computed(() => {
       return 'Ce territoire ne vous appartient plus.'
     case 'under-attack':
       return 'Impossible pendant une attaque sur ce territoire.'
+    case 'attacking':
+      return 'Impossible pendant une attaque lancée depuis ce territoire.'
     case 'already-reinforcing':
       return 'Un renfort est déjà en cours ici.'
     case 'other-reinforcement-active':

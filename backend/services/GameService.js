@@ -124,6 +124,12 @@ class GameService {
         if (!fromTerr || fromTerr.ownerId !== attackerId) {
             throw new Error('You do not own the source territory');
         }
+        if (fromTerr.isUnderAttack) {
+            throw new Error('Source territory is currently under attack');
+        }
+        if (fromTerr.isAttacking) {
+            throw new Error('Source territory is already attacking another territory');
+        }
 
         // Vérifier que le territoire cible a un propriétaire différent
         const toTerr = game.territories.get(toTerritory);
@@ -142,6 +148,9 @@ class GameService {
         // Vérifier que le territoire n'est pas déjà attaqué
         if (game.isTerritoryUnderAttack(toTerritory)) {
             throw new Error('This territory is already under attack');
+        }
+        if (game.isTerritoryAttacking(toTerritory)) {
+            throw new Error('This territory is currently attacking another territory');
         }
 
         return {
@@ -174,6 +183,7 @@ class GameService {
         const territories = Array.from(game.territories.values()).map(t => ({
             ...t.toJSON ? t.toJSON() : t,
             isUnderAttack: game.isTerritoryUnderAttack(t.id),
+            isAttacking: game.isTerritoryAttacking(t.id),
             isReinforced: game.isTerritoryUnderReinforcement(t.id) || t.isReinforced,
             neighbors: MapService.getNeighbors(t.id).map(n => n.id)
         }));

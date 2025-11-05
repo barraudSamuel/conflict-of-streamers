@@ -31,6 +31,12 @@ class AttackManager {
         if (!fromTerr || fromTerr.ownerId !== attackerId) {
             return { valid: false, error: 'You do not own the source territory' };
         }
+        if (fromTerr.isUnderAttack) {
+            return { valid: false, error: 'Source territory is currently under attack' };
+        }
+        if (fromTerr.isAttacking) {
+            return { valid: false, error: 'Source territory is already attacking another territory' };
+        }
 
         // Vérifier que le territoire cible existe et appartient à un autre joueur
         const toTerr = game.territories.get(toTerritory);
@@ -42,6 +48,9 @@ class AttackManager {
         }
         if (!toTerr.ownerId) {
             return { valid: false, error: 'Target territory has no owner' };
+        }
+        if (game.isTerritoryAttacking(toTerritory)) {
+            return { valid: false, error: 'This territory is currently attacking another territory' };
         }
 
         // TODO: Vérifier que les territoires sont adjacents
@@ -180,6 +189,9 @@ class AttackManager {
             territory.isUnderAttack = false;
         }
 
+        const attackData = attack.toJSON();
+        game.removeAttack(territoryId);
+
         // Vérifier si le jeu est terminé (un joueur possède tout)
         const owners = new Set();
         for (let territory of game.territories.values()) {
@@ -191,9 +203,6 @@ class AttackManager {
         if (owners.size === 1) {
             game.endGame();
         }
-
-        const attackData = attack.toJSON();
-        game.removeAttack(territoryId);
 
         if (callback) {
             callback(attackData, game.toJSON());
