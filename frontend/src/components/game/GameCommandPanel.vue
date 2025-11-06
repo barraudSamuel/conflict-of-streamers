@@ -353,7 +353,6 @@ const showReinforcementWarning = computed(
             <GameCommandCenterCard
                 :countdown="formatDuration(currentAttackStats.remaining)"
                 :encouragement="currentAttackEncouragement"
-                encouragement-class="text-primary/80"
             />
             <GameCommandSideCard
                 title="Défense"
@@ -467,7 +466,7 @@ const showReinforcementWarning = computed(
             <GameCommandCenterCard
                 :countdown="formatDuration(defendingAttackStats.remaining)"
                 :encouragement="defendingEncouragement"
-                encouragement-class="text-emerald-300"
+                encouragement-class="text-emerald-300 drop-shadow-lg"
             />
             <GameCommandSideCard
                 title="Défense"

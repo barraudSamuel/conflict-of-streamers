@@ -6,7 +6,7 @@ withDefaults(
     encouragementClass?: string
   }>(),
   {
-    encouragementClass: 'text-primary/80'
+    encouragementClass: 'text-red-400 drop-shadow-lg'
   }
 )
 </script>
@@ -16,7 +16,7 @@ withDefaults(
     <div class="text-7xl font-semibold tracking-tight text-slate-100 drop-shadow-lg">
       {{ countdown }}
     </div>
-    <p class="text-3xl font-semibold text-pretty" :class="encouragementClass">
+    <p class="text-2xl md:text-3xl font-semibold text-pretty whitespace-pre-line" :class="encouragementClass">
       {{ encouragement }}
     </p>
   </div>

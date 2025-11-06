@@ -647,12 +647,12 @@ export const useGameView = (gameId: string) => {
 
   const currentAttackEncouragement = computed(() => {
     if (!currentAttack.value) return ''
-    return `Tapez ${attackCommandLabel.value} dans le chat !`
+    return `Spammez :\n${attackCommandLabel.value}`
   })
 
   const defendingEncouragement = computed(() => {
     if (!defendingAttack.value) return ''
-    return `Tapez ${defenseCommandLabel.value} dans le chat !`
+    return `Spammez :\n${defenseCommandLabel.value}`
   })
 
   const clearReconnectTimer = () => {
