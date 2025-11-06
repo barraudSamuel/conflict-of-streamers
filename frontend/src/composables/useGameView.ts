@@ -100,6 +100,15 @@ export const useGameView = (gameId: string) => {
   let manualDisconnect = false
   let historyInterval: number | null = null
 
+  const resolveNeighborIds = (territory: any): string[] => {
+    if (!territory || !Array.isArray(territory.neighbors)) return []
+    return territory.neighbors
+      .map((neighbor: unknown) =>
+        typeof neighbor === 'string' && neighbor.trim() !== '' ? neighbor.trim() : null
+      )
+      .filter((neighbor): neighbor is string => neighbor !== null)
+  }
+
   const addActionHistoryEntry = (
     partsOrMessage: string | ActionLogFragment[],
     variant: ActionLogEntry['variant'] = 'info'
@@ -417,8 +426,10 @@ export const useGameView = (gameId: string) => {
     if (target.isUnderAttack) return false
     if (target.isAttacking) return false
 
-    const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
-    return neighbors.includes(target.id)
+    const neighbors = resolveNeighborIds(origin)
+    const targetId = typeof target.id === 'string' ? target.id.trim() : null
+    if (!targetId) return false
+    return neighbors.includes(targetId)
   })
 
   const attackCTAEnabled = computed(() => canLaunchAttack.value && !attackLoading.value)
@@ -430,12 +441,11 @@ export const useGameView = (gameId: string) => {
     if (!origin) return []
     if (origin.isUnderAttack || origin.isAttacking) return []
 
-    const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
+    const neighbors = resolveNeighborIds(origin)
     if (!neighbors.length) return []
 
     const attackable: string[] = []
     neighbors.forEach((neighborId) => {
-      if (typeof neighborId !== 'string' || neighborId.trim() === '') return
       const candidate = getTerritory(neighborId)
       if (!candidate) return
       if (candidate.ownerId === currentPlayerId.value) return
@@ -466,8 +476,9 @@ export const useGameView = (gameId: string) => {
     if (target.ownerId === currentPlayerId.value) return 'target-owned'
     if (target.isUnderAttack) return 'target-under-attack'
     if (target.isAttacking) return 'target-attacking'
-    const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
-    if (!neighbors.includes(target.id)) return 'not-neighbor'
+    const neighbors = resolveNeighborIds(origin)
+    const targetId = typeof target.id === 'string' ? target.id.trim() : null
+    if (!targetId || !neighbors.includes(targetId)) return 'not-neighbor'
     return null
   })
 
@@ -1331,8 +1342,9 @@ export const useGameView = (gameId: string) => {
       return
     }
 
-    const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
-    if (!neighbors.includes(territoryId)) {
+    const neighbors = resolveNeighborIds(origin)
+    const targetId = territoryId.trim()
+    if (!neighbors.includes(targetId)) {
       attackError.value = 'Vous ne pouvez attaquer que des territoires limitrophes.'
       return
     }
@@ -1609,8 +1621,9 @@ export const useGameView = (gameId: string) => {
 
       if (!target) return
 
-      const neighbors = Array.isArray(origin.neighbors) ? origin.neighbors : []
-      if (!neighbors.includes(target.id)) {
+      const neighbors = resolveNeighborIds(origin)
+      const targetId = typeof target.id === 'string' ? target.id.trim() : null
+      if (!targetId || !neighbors.includes(targetId)) {
         targetTerritoryId.value = null
       }
     }

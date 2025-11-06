@@ -35,6 +35,7 @@ interface ActiveAttack {
   territoryId?: string | null
   fromTerritory?: string | null
   toTerritory?: string | null
+  attackerId?: string | null
 }
 
 interface ActiveReinforcement {

@@ -137,7 +137,7 @@ const winnerPresentation = computed<WinnerPresentation | null>(() => {
       detail: isPlayerDefender
         ? `Vous conservez ${territoryLabel.value}.`
         : isPlayerAttacker
-          ? `Vous perdez ${territoireLabel.value}.`
+          ? `Vous perdez ${territoryLabel.value}.`
           : `${defenderLabel.value} défend ${territoryLabel.value}.`,
       wrapperClass: 'border-sky-400/40 bg-sky-500/10',
       titleClass: 'text-sky-200',
