@@ -106,7 +106,9 @@ export const useGameView = (gameId: string) => {
       .map((neighbor: unknown) =>
         typeof neighbor === 'string' && neighbor.trim() !== '' ? neighbor.trim() : null
       )
-      .filter((neighbor): neighbor is string => neighbor !== null)
+      .filter(
+        (neighbor: string | null): neighbor is string => neighbor !== null && neighbor !== ''
+      )
   }
 
   const addActionHistoryEntry = (
