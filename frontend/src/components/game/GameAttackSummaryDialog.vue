@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, type Component } from 'vue'
 import Dialog from '@/components/ui/dialog/Dialog.vue'
 import DialogContent from '@/components/ui/dialog/DialogContent.vue'
 import DialogHeader from '@/components/ui/dialog/DialogHeader.vue'
 import DialogTitle from '@/components/ui/dialog/DialogTitle.vue'
-import DialogDescription from '@/components/ui/dialog/DialogDescription.vue'
 import DialogFooter from '@/components/ui/dialog/DialogFooter.vue'
 import DialogClose from '@/components/ui/dialog/DialogClose.vue'
 import { Button } from '@/components/ui/button'
@@ -16,6 +15,7 @@ const props = defineProps<{
   open: boolean
   stats: AttackSummaryStats | null
   getPlayerUsername?: (playerId?: string | null) => string | null
+  currentPlayerId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -24,6 +24,7 @@ const emit = defineEmits<{
 }>()
 
 const attack = computed(() => props.stats?.attack ?? null)
+const currentPlayerId = computed(() => props.currentPlayerId ?? null)
 
 const attackerLabel = computed(() => {
   const playerId = attack.value?.attackerId ?? null
@@ -85,16 +86,83 @@ const bestSpammerSide = computed<'attack' | 'defense' | null>(() => {
   return null
 })
 
-const winnerMessage = computed(() => {
-  if (!attack.value) return ''
-  if (attack.value.winner === attack.value.attackerId) {
-    return `${attackerLabel.value} conquiert ${territoryLabel.value}!`
-  }
-  if (attack.value.winner === attack.value.defenderId) {
-    return `${defenderLabel.value} repousse l'attaque sur ${territoryLabel.value}.`
-  }
-  return `Combat indécis sur ${territoryLabel.value}.`
+type PlayerPerspective = 'attacker' | 'defender' | 'observer'
+
+const playerPerspective = computed<PlayerPerspective>(() => {
+  const reference = currentPlayerId.value
+  const currentAttack = attack.value
+  if (!reference || !currentAttack) return 'observer'
+  if (currentAttack.attackerId === reference) return 'attacker'
+  if (currentAttack.defenderId === reference) return 'defender'
+  return 'observer'
 })
+
+interface WinnerPresentation {
+  title: string
+  detail: string
+  wrapperClass: string
+  titleClass: string
+  detailClass: string
+  icon: Component
+  iconClass: string
+}
+
+const winnerPresentation = computed<WinnerPresentation | null>(() => {
+  const currentAttack = attack.value
+  if (!currentAttack) return null
+
+  if (currentAttack.winner === currentAttack.attackerId) {
+    const isPlayerAttacker = playerPerspective.value === 'attacker'
+    const isPlayerDefender = playerPerspective.value === 'defender'
+    return {
+      title: isPlayerAttacker ? 'Territoire conquis' : isPlayerDefender ? 'Territoire perdu' : 'Victoire de l\'attaque',
+      detail: isPlayerAttacker
+        ? `Vous gagnez ${territoryLabel.value}.`
+        : isPlayerDefender
+          ? `Vous perdez ${territoryLabel.value}.`
+          : `${attackerLabel.value} s'empare de ${territoryLabel.value}.`,
+      wrapperClass: 'border-emerald-400/40 bg-emerald-500/10',
+      titleClass: 'text-emerald-200',
+      detailClass: 'text-emerald-100/80',
+      icon: Swords,
+      iconClass: 'text-emerald-300'
+    }
+  }
+
+  if (currentAttack.winner === currentAttack.defenderId) {
+    const isPlayerDefender = playerPerspective.value === 'defender'
+    const isPlayerAttacker = playerPerspective.value === 'attacker'
+    return {
+      title: isPlayerDefender ? 'Territoire sécurisé' : isPlayerAttacker ? 'Territoire manqué' : 'Victoire de la défense',
+      detail: isPlayerDefender
+        ? `Vous conservez ${territoryLabel.value}.`
+        : isPlayerAttacker
+          ? `Vous perdez ${territoireLabel.value}.`
+          : `${defenderLabel.value} défend ${territoryLabel.value}.`,
+      wrapperClass: 'border-sky-400/40 bg-sky-500/10',
+      titleClass: 'text-sky-200',
+      detailClass: 'text-sky-100/80',
+      icon: Shield,
+      iconClass: 'text-sky-300'
+    }
+  }
+
+  return {
+    title: 'Égalité',
+    detail:
+      playerPerspective.value === 'attacker'
+        ? `Vous n'avez pas sécurisé ${territoryLabel.value}.`
+        : playerPerspective.value === 'defender'
+          ? `Vous n'avez pas encore perdu ${territoryLabel.value}.`
+          : `Le territoire ${territoryLabel.value} reste disputé.`,
+    wrapperClass: 'border-slate-400/40 bg-slate-800/80',
+    titleClass: 'text-slate-200',
+    detailClass: 'text-slate-200/80',
+    icon: Timer,
+    iconClass: 'text-slate-200'
+  }
+})
+
 
 const formatViewerName = (entry: AttackParticipantSummary | null) => {
   if (!entry) return 'Viewer'
@@ -128,9 +196,21 @@ const close = () => {
             {{ originLabel }} → {{ territoryLabel }}
           </span>
         </DialogTitle>
-        <DialogDescription class="text-left text-slate-300">
-          {{ winnerMessage }}
-        </DialogDescription>
+        <div
+            v-if="winnerPresentation"
+            class="flex items-center gap-3 rounded-xl border px-4 py-3"
+            :class="winnerPresentation.wrapperClass"
+        >
+          <component :is="winnerPresentation.icon" class="size-5" :class="winnerPresentation.iconClass" />
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-wide" :class="winnerPresentation.titleClass">
+              {{ winnerPresentation.title }}
+            </p>
+            <p class="text-xs" :class="winnerPresentation.detailClass">
+              {{ winnerPresentation.detail }}
+            </p>
+          </div>
+        </div>
       </DialogHeader>
 
       <div class="grid gap-4 md:grid-cols-4">
@@ -286,7 +366,7 @@ const close = () => {
         </section>
       </div>
 
-      <DialogFooter class="sm:justify-end">
+      <DialogFooter class="!mt-0 sm:justify-end">
         <DialogClose as-child>
           <Button variant="secondary" class="w-full sm:w-auto" @click="close">
             Fermer

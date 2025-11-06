@@ -75,7 +75,6 @@ const {
   reinforcementDisabledReason,
   attackLoading,
   reinforcementLoading,
-  lastAttackResult,
   attackSummaryStats,
   attackSummaryVisible,
   selectedReinforcement,
@@ -381,6 +380,7 @@ const winnerConfettiOptions = {
           v-model:open="attackSummaryVisible"
           :stats="attackSummaryStats"
           :get-player-username="getPlayerUsername"
+          :current-player-id="currentPlayerId"
           @close="closeAttackSummary"
       />
 
@@ -438,7 +438,6 @@ const winnerConfettiOptions = {
                 :reinforcement-loading="reinforcementLoading"
                 :cancel-attack-loading="cancelAttackLoading"
                 :cancel-reinforcement-loading="cancelReinforcementLoading"
-                :last-attack-result="lastAttackResult"
                 :selected-owned-territory="selectedOwnedTerritory"
                 :target-territory="targetTerritory"
                 :selected-reinforcement="selectedReinforcement"

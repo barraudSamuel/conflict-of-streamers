@@ -6,7 +6,6 @@ import {Swords, OctagonX, Shield, OctagonMinus} from 'lucide-vue-next'
 import GameCommandCenterCard from '@/components/game/GameCommandCenterCard.vue'
 import GameCommandSideCard from '@/components/game/GameCommandSideCard.vue'
 import type {
-  AttackResult,
   AttackStats,
   BattleBalance,
   ReinforcementStats
@@ -35,7 +34,6 @@ const props = defineProps<{
   reinforcementLoading: boolean
   cancelAttackLoading: boolean
   cancelReinforcementLoading: boolean
-  lastAttackResult: AttackResult | null
   selectedOwnedTerritory: any | null
   targetTerritory: any | null
   selectedReinforcement: any | null
@@ -74,7 +72,6 @@ const {
   reinforcementLoading,
   cancelAttackLoading,
   cancelReinforcementLoading,
-  lastAttackResult,
   selectedOwnedTerritory,
   targetTerritory,
   selectedReinforcement,
@@ -565,24 +562,6 @@ const showReinforcementWarning = computed(
               class="space-y-4 p-4"
               :class="showReinforcementActions ? 'pb-6' : ''"
           >
-            <div v-if="lastAttackResult" class="rounded-lg border border-white/10 bg-slate-900/50 p-4">
-              <p
-                  class="text-sm font-semibold"
-                  :class="{
-                    'text-emerald-300': lastAttackResult.outcome === 'win',
-                    'text-red-300': lastAttackResult.outcome === 'loss',
-                    'text-slate-300': lastAttackResult.outcome === 'draw'
-                  }"
-              >
-                <template v-if="lastAttackResult.outcome === 'win'">Victoire !</template>
-                <template v-else-if="lastAttackResult.outcome === 'loss'">Défaite…</template>
-                <template v-else>Égalité</template>
-                <span class="ml-2 text-xs text-slate-400">
-                  {{ lastAttackResult.attack.attackPoints }} vs {{ lastAttackResult.attack.defensePoints }}
-                </span>
-              </p>
-            </div>
-
             <div class="space-y-3 text-sm text-slate-300">
               <ul class="grid gap-3 sm:grid-cols-3">
                 <li

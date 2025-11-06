@@ -213,12 +213,36 @@ class TwitchService {
             }
         }
 
+        const subscriberFlag = (() => {
+            if (typeof tags?.subscriber === 'string' && tags.subscriber.trim() !== '') {
+                return tags.subscriber.trim() !== '0';
+            }
+
+            const badges = tags?.badges;
+            if (badges && typeof badges === 'object') {
+                if (Object.prototype.hasOwnProperty.call(badges, 'subscriber')) {
+                    return true;
+                }
+                if (Object.prototype.hasOwnProperty.call(badges, 'founder')) {
+                    return true;
+                }
+            }
+
+            const badgeInfo = typeof tags?.['badge-info'] === 'string' ? tags['badge-info'] : '';
+            if (badgeInfo) {
+                return badgeInfo.includes('subscriber') || badgeInfo.includes('founder');
+            }
+
+            return false;
+        })();
+
         return {
             id: userId,
             username,
             displayName,
             color: typeof tags?.color === 'string' ? tags.color : null,
-            avatarUrl
+            avatarUrl,
+            isSubscriber: subscriberFlag
         };
     }
 
@@ -291,11 +315,13 @@ class TwitchService {
                     };
                     const targetMatch = this.doesTargetMatch(synthetic, territoryId, target);
                     if (targetMatch) {
+                        const basePoints = game.settings?.pointsPerCommand ?? 1;
+                        const reinforcementPoints = viewer.isSubscriber ? basePoints * 2 : basePoints;
                         const updated = ReinforcementManager.addContribution(
                             game.id,
                             territoryId,
                             viewer.username,
-                            game.settings?.pointsPerCommand ?? 1
+                            reinforcementPoints
                         );
                         if (updated) {
                             this.notifyCommandProcessed(

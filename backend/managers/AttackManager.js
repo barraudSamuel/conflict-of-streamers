@@ -136,7 +136,9 @@ class AttackManager {
             return false;
         }
 
-        const points = game.settings.pointsPerCommand;
+        const basePoints = game.settings.pointsPerCommand ?? 1;
+        const multiplier = participant && typeof participant === 'object' && participant.isSubscriber ? 2 : 1;
+        const points = basePoints * multiplier;
 
         if (isDefense) {
             attack.addDefensePoint(participant, points);
