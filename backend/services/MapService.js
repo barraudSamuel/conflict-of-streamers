@@ -5,6 +5,54 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+const LANDLOCKED_TERRITORIES = new Set([
+    'AD', // Andorra
+    'AF', // Afghanistan
+    'AM', // Armenia
+    'AT', // Austria
+    'AZ', // Azerbaijan
+    'BF', // Burkina Faso
+    'BI', // Burundi
+    'BO', // Bolivia
+    'BT', // Bhutan
+    'BW', // Botswana
+    'BY', // Belarus
+    'CF', // Central African Rep.
+    'CH', // Switzerland
+    'CZ', // Czech Rep.
+    'ET', // Ethiopia
+    'HU', // Hungary
+    'KG', // Kyrgyzstan
+    'KZ', // Kazakhstan
+    'LA', // Laos
+    'LI', // Liechtenstein
+    'LS', // Lesotho
+    'LU', // Luxembourg
+    'MD', // Moldova
+    'ML', // Mali
+    'MN', // Mongolia
+    'MW', // Malawi
+    'NE', // Niger
+    'NP', // Nepal
+    'MK', // North Macedonia
+    'PY', // Paraguay
+    'RS', // Serbia
+    'RW', // Rwanda
+    'SK', // Slovakia
+    'SM', // San Marino
+    'SS', // South Sudan
+    'SZ', // Eswatini
+    'TD', // Chad
+    'TJ', // Tajikistan
+    'TM', // Turkmenistan
+    'UG', // Uganda
+    'UZ', // Uzbekistan
+    'VA', // Vatican City
+    'XK', // Kosovo
+    'ZM', // Zambia
+    'ZW' // Zimbabwe
+]);
+
 class MapService {
     constructor() {
         this.territories = new Map();
@@ -51,18 +99,86 @@ class MapService {
         return Array.from(this.territories.values());
     }
 
-    areNeighbors(territory1, territory2) {
-        const terr1 = this.territories.get(territory1);
-        if (!terr1) return false;
+    isIsland(territoryId) {
+        const territory = this.territories.get(territoryId);
+        if (!territory) return false;
 
-        return terr1.neighbors.includes(territory2);
+        const neighbors = Array.isArray(territory.neighbors) ? territory.neighbors : [];
+        if (neighbors.length === 0) {
+            return true;
+        }
+
+        if (neighbors.length === 1) {
+            const neighbor = this.territories.get(neighbors[0]);
+            if (!neighbor) {
+                return true;
+            }
+
+            const reciprocalNeighbors = Array.isArray(neighbor.neighbors) ? neighbor.neighbors : [];
+            return reciprocalNeighbors.length === 1 && reciprocalNeighbors[0] === territoryId;
+        }
+
+        return false;
     }
 
-    getNeighbors(territoryId) {
+    hasSeaAccess(territoryId) {
+        if (this.isIsland(territoryId)) {
+            return true;
+        }
+
+        return !LANDLOCKED_TERRITORIES.has(territoryId);
+    }
+
+    canAttackBySea(fromTerritory, toTerritory) {
+        if (fromTerritory === toTerritory) {
+            return false;
+        }
+
+        return this.hasSeaAccess(fromTerritory) && this.isIsland(toTerritory);
+    }
+
+    getExtendedNeighborIds(territoryId) {
         const territory = this.territories.get(territoryId);
         if (!territory) return [];
 
-        return territory.neighbors.map(id => this.territories.get(id)).filter(Boolean);
+        const neighborSet = new Set(Array.isArray(territory.neighbors) ? territory.neighbors : []);
+
+        if (this.hasSeaAccess(territoryId)) {
+            for (let [candidateId] of this.territories) {
+                if (neighborSet.has(candidateId) || candidateId === territoryId) {
+                    continue;
+                }
+
+                if (this.canAttackBySea(territoryId, candidateId)) {
+                    neighborSet.add(candidateId);
+                }
+            }
+        }
+
+        return Array.from(neighborSet);
+    }
+
+    areNeighbors(territory1, territory2) {
+        if (!this.territories.has(territory1) || !this.territories.has(territory2)) {
+            return false;
+        }
+
+        if (this.territories.get(territory1)?.neighbors?.includes(territory2)) {
+            return true;
+        }
+
+        return (
+            this.canAttackBySea(territory1, territory2) ||
+            this.canAttackBySea(territory2, territory1)
+        );
+    }
+
+    getNeighbors(territoryId) {
+        const neighborIds = this.getExtendedNeighborIds(territoryId);
+
+        return neighborIds
+            .map(id => this.territories.get(id))
+            .filter(Boolean);
     }
 
     validateTerritory(territoryId) {
@@ -112,10 +228,7 @@ class MapService {
                 continue;
             }
 
-            const territory = this.territories.get(current);
-            if (!territory) continue;
-
-            for (let neighbor of territory.neighbors) {
+            for (let neighbor of this.getExtendedNeighborIds(current)) {
                 if (!visited.has(neighbor)) {
                     visited.add(neighbor);
                     queue.push([...path, neighbor]);

@@ -340,11 +340,13 @@ export class Game {
         const allTerritories = MapService.getAllTerritories();
 
         for (let territory of allTerritories) {
+            const neighbors = MapService.getNeighbors(territory.id).map(neighbor => neighbor.id);
+
             this.territories.set(territory.id, {
                 id: territory.id,
                 name: territory.name,
                 code: territory.code,
-                neighbors: territory.neighbors || [],  // ✅ Copier les voisins
+                neighbors,
                 ownerId: null,
                 attackPower: 0,
                 defensePower: 0,
@@ -379,9 +381,7 @@ export class Game {
     }
 
     areTerritoriesAdjacent(territoryId1, territoryId2) {
-        const territory = this.territories.get(territoryId1);
-        if (!territory) return false;
-        return territory.neighbors && territory.neighbors.includes(territoryId2);
+        return MapService.areNeighbors(territoryId1, territoryId2);
     }
 
     toJSON() {
