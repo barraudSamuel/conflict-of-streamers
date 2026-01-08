@@ -1,6 +1,8 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import websocket from '@fastify/websocket'
+import { ZodError } from 'zod'
+import { ValidationError, AppError, GameError, NotFoundError, UnauthorizedError } from 'shared/errors'
 
 const PORT = Number(process.env.PORT) || 3000
 const HOST = process.env.HOST || '0.0.0.0'
@@ -26,6 +28,63 @@ await fastify.register(cors, {
 })
 
 await fastify.register(websocket)
+
+// Global error handler
+// IMPORTANT: Check order matters - most specific errors first, then base AppError
+// Do not reorder without understanding the inheritance hierarchy:
+// ValidationError/GameError/NotFoundError/UnauthorizedError extend AppError
+fastify.setErrorHandler((error, request, reply) => {
+  // 1. Handle ZodError (from schema validation)
+  if (error instanceof ZodError) {
+    fastify.log.error({ err: error }, 'Validation error')
+    return reply.status(400).send({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid request data',
+        details: error.issues
+      }
+    })
+  }
+
+  // 2. Handle custom errors (ValidationError, GameError, NotFoundError, UnauthorizedError)
+  if (error instanceof ValidationError ||
+      error instanceof GameError ||
+      error instanceof NotFoundError ||
+      error instanceof UnauthorizedError) {
+    fastify.log.error({ err: error }, 'Custom error')
+    return reply.status(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+        details: error.details
+      }
+    })
+  }
+
+  // 3. Handle base AppError (statusCode 500 default)
+  if (error instanceof AppError) {
+    fastify.log.error({ err: error, stack: error.stack }, 'Application error')
+    return reply.status(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+        details: error.details
+      }
+    })
+  }
+
+  // 4. Unexpected errors (500) - log full stack trace
+  const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+  const errorStack = error instanceof Error ? error.stack : undefined
+  fastify.log.error({ err: error, stack: errorStack }, 'Unexpected error')
+  return reply.status(500).send({
+    error: {
+      code: 'INTERNAL_ERROR',
+      message: 'An unexpected error occurred',
+      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+    }
+  })
+})
 
 // Health check endpoint
 fastify.get('/health', async () => {

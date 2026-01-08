@@ -9,6 +9,8 @@ export const BaseEntitySchema = z.object({
   updatedAt: z.string().datetime()
 })
 
-// Player schemas will be added in future stories
-// Game schemas will be added in future stories
-// Territory schemas will be added in future stories
+// Export all entity schemas
+export { PlayerSchema, PLAYER_COLORS } from './player'
+export { GameSchema, GameConfigSchema } from './game'
+export { TerritorySchema } from './territory'
+export { BattleSchema, BattleStatsSchema } from './battle'

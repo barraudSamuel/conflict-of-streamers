@@ -8,6 +8,8 @@ export interface BaseEntity {
   updatedAt: string
 }
 
-// Player types will be added in future stories
-// Game types will be added in future stories
-// Territory types will be added in future stories
+// Export all entity types
+export type { Player } from './player'
+export type { Game, GameConfig } from './game'
+export type { Territory } from './territory'
+export type { Battle, BattleStats } from './battle'

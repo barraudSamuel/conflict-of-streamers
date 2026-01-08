@@ -18,7 +18,7 @@
 
     // Emit
     "outDir": "./dist",
-    "rootDir": "./src",
+    // rootDir removed to allow cross-package imports in monorepo workspace
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
