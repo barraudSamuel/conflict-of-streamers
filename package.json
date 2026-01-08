@@ -1,0 +1,37 @@
+{
+  "name": "conflict-of-streamers",
+  "version": "1.0.0",
+  "description": "Un jeu de conquête territoriale en temps réel où les viewers Twitch s'affrontent pour dominer une carte mondiale",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "build": "npm run build:shared && npm run build:frontend && npm run build:backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "build:shared": "npm run build --workspace=shared",
+    "install:all": "npm install",
+    "docker:dev": "docker-compose up",
+    "docker:prod": "docker-compose -f docker-compose.prod.yml up"
+  },
+  "keywords": [
+    "twitch",
+    "game",
+    "realtime",
+    "vue",
+    "fastify",
+    "websocket"
+  ],
+  "author": "sam",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

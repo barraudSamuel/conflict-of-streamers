@@ -1,0 +1,104 @@
+# Workflow Status Template
+
+# This tracks progress through BMM methodology Analysis, Planning, and Solutioning phases.
+# Implementation phase is tracked separately in sprint-status.yaml
+
+# STATUS DEFINITIONS:
+# ==================
+# Initial Status (before completion):
+#   - required: Must be completed to progress
+#   - optional: Can be completed but not required
+#   - recommended: Strongly suggested but not required
+#   - conditional: Required only if certain conditions met (e.g., if_has_ui)
+#
+# Completion Status:
+#   - {file-path}: File created/found (e.g., "docs/product-brief.md")
+#   - skipped: Optional/conditional workflow that was skipped
+
+generated: "2026-01-07"
+project: "conflict-of-streamers"
+user_description: |
+  Application web de conquête territoriale multijoueur pour streamers avec intégration Twitch.
+  - Combat basé sur spam de commandes chat (ATTACK/DEFEND)
+  - Parties à 10 joueurs maximum en ligne avec zones BOT
+  - Système attaque/défense avec timer (ex: 30 sec)
+  - Multiplicateurs basés sur taille/nombre de territoires
+  - Force d'attaque proportionnelle à la taille du territoire ciblé
+  - Chaque message compte (permettant aux petits streamers de participer)
+  - Interface visuelle attractive pour streaming en direct
+project_type: "game"
+selected_track: "method"
+field_type: "greenfield"
+brainstorm_requested: true
+research_requested: false
+product_brief_requested: false
+workflow_path: "_bmad/bmm/workflows/workflow-status/paths/method-greenfield.yaml"
+workflow_status:
+  # Phase 1: Analysis (Optional)
+  - id: "brainstorm-project"
+    name: "Brainstorming"
+    phase: 1
+    status: "_bmad-output/analysis/brainstorming-session-2026-01-07.md"
+    agent: "analyst"
+    command: "/bmad:core:workflows:brainstorming"
+    note: "✅ Complété - 32 idées générées, concept validé techniquement"
+    completed_date: "2026-01-07"
+
+  # Phase 2: Planning (Required)
+  - id: "prd"
+    name: "Product Requirements Document"
+    phase: 2
+    status: "required"
+    agent: "pm"
+    command: "/bmad:bmm:workflows:create-prd"
+    note: "Document de spécifications avec FRs et NFRs"
+
+  - id: "create-ux-design"
+    name: "UX Design"
+    phase: 2
+    status: "conditional"
+    agent: "ux-designer"
+    command: "/bmad:bmm:workflows:create-ux-design"
+    note: "Déterminé après PRD - votre projet a une UI donc sera probablement nécessaire"
+
+  # Phase 3: Solutioning (Required)
+  - id: "create-architecture"
+    name: "Architecture"
+    phase: 3
+    status: "required"
+    agent: "architect"
+    command: "/bmad:bmm:workflows:create-architecture"
+    note: "Architecture système complète"
+
+  - id: "create-epics-and-stories"
+    name: "Epics & Stories"
+    phase: 3
+    status: "required"
+    agent: "pm"
+    command: "/bmad:bmm:workflows:create-epics-and-stories"
+    note: "Décomposition PRD en epics et stories implémentables"
+
+  - id: "test-design"
+    name: "Test Design"
+    phase: 3
+    status: "optional"
+    agent: "tea"
+    command: "/bmad:bmm:workflows:testarch-test-design"
+    note: "Évaluation de la testabilité du système"
+
+  - id: "implementation-readiness"
+    name: "Implementation Readiness Check"
+    phase: 3
+    status: "required"
+    agent: "architect"
+    command: "/bmad:bmm:workflows:check-implementation-readiness"
+    note: "Validation PRD + Architecture + Epics + UX"
+
+  # Phase 4: Implementation (Required)
+  - id: "sprint-planning"
+    name: "Sprint Planning"
+    phase: 4
+    status: "required"
+    agent: "sm"
+    command: "/bmad:bmm:workflows:sprint-planning"
+    note: "Création du plan de sprint - travail ultérieur suivi dans sprint-status"

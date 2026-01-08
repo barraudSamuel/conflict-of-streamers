@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>conflict-of-streamers - Design Directions</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 48px 24px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 64px;
+        }
+
+        .header h1 {
+            font-size: 48px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #FF3B3B, #00F5FF, #FFE500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 20px;
+            color: #AAAAAA;
+        }
+
+        .controls {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-bottom: 48px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            background: #1e1e1e;
+            border: 2px solid #333;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #2a2a2a;
+            border-color: #FF3B3B;
+        }
+
+        .btn.active {
+            background: #FF3B3B;
+            border-color: #FF3B3B;
+        }
+
+        .mockup-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            gap: 32px;
+            margin-bottom: 64px;
+        }
+
+        .mockup-card {
+            background: #1e1e1e;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #333;
+            transition: all 0.3s;
+        }
+
+        .mockup-card:hover {
+            border-color: #FF3B3B;
+            transform: translateY(-4px);
+        }
+
+        .mockup-header {
+            padding: 16px 24px;
+            background: #141414;
+            border-bottom: 1px solid #333;
+        }
+
+        .mockup-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .mockup-description {
+            font-size: 14px;
+            color: #AAAAAA;
+        }
+
+        .mockup-preview {
+            aspect-ratio: 16/9;
+            position: relative;
+            background: #0a0a0a;
+            overflow: hidden;
+        }
+
+        /* Direction 1: Classic Agar.io */
+        .direction-1 .canvas {
+            width: 100%;
+            height: 100%;
+            background:
+                linear-gradient(#1a1a1a 1px, transparent 1px),
+                linear-gradient(90deg, #1a1a1a 1px, transparent 1px);
+            background-size: 40px 40px;
+            position: relative;
+        }
+
+        .direction-1 .sidebar {
+            position: absolute;
+            background: rgba(30, 30, 30, 0.95);
+            padding: 16px;
+        }
+
+        .direction-1 .sidebar-left {
+            left: 16px;
+            top: 16px;
+            width: 280px;
+            border-radius: 8px;
+        }
+
+        .direction-1 .sidebar-right {
+            right: 16px;
+            top: 16px;
+            width: 280px;
+            border-radius: 8px;
+        }
+
+        .direction-1 .modal-battle {
+            position: absolute;
+            top: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e1e1e;
+            padding: 24px;
+            border-radius: 8px;
+            width: 500px;
+            border: 2px solid #333;
+        }
+
+        .direction-1 .progress-bar {
+            height: 32px;
+            background: #0a0a0a;
+            border-radius: 16px;
+            overflow: hidden;
+            margin: 16px 0;
+            position: relative;
+        }
+
+        .direction-1 .progress-fill-left {
+            position: absolute;
+            left: 0;
+            height: 100%;
+            width: 45%;
+            background: #FF3B3B;
+        }
+
+        .direction-1 .progress-fill-right {
+            position: absolute;
+            right: 0;
+            height: 100%;
+            width: 42%;
+            background: #00F5FF;
+        }
+
+        .direction-1 .mini-chat {
+            position: absolute;
+            bottom: 16px;
+            right: 312px;
+            width: 350px;
+            background: rgba(30, 30, 30, 0.9);
+            padding: 12px;
+            border-radius: 4px;
+        }
+
+        .mini-chat-message {
+            padding: 6px 8px;
+            margin-bottom: 4px;
+            border-radius: 2px;
+            font-size: 14px;
+        }
+
+        .mini-chat-message.correct {
+            background: rgba(0, 255, 127, 0.2);
+        }
+
+        .mini-chat-message.incorrect {
+            background: rgba(255, 59, 59, 0.2);
+        }
+
+        /* Direction 2: Neon Glow */
+        .direction-2 .canvas {
+            width: 100%;
+            height: 100%;
+            background: #0a0a0a;
+            position: relative;
+        }
+
+        .direction-2 .modal-battle {
+            position: absolute;
+            top: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(20, 20, 20, 0.95);
+            padding: 24px;
+            border-radius: 12px;
+            width: 500px;
+            border: 2px solid #FF3B3B;
+            box-shadow: 0 0 20px rgba(255, 59, 59, 0.5);
+        }
+
+        .direction-2 .progress-bar {
+            height: 40px;
+            background: #0a0a0a;
+            border-radius: 20px;
+            overflow: hidden;
+            margin: 16px 0;
+            position: relative;
+            border: 2px solid #333;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .direction-2 .progress-fill-left {
+            position: absolute;
+            left: 0;
+            height: 100%;
+            width: 48%;
+            background: linear-gradient(90deg, #FF3B3B, #FF6B35);
+            box-shadow: 0 0 15px rgba(255, 59, 59, 0.6);
+        }
+
+        .direction-2 .progress-fill-right {
+            position: absolute;
+            right: 0;
+            height: 100%;
+            width: 46%;
+            background: linear-gradient(270deg, #00F5FF, #00FFA3);
+            box-shadow: 0 0 15px rgba(0, 245, 255, 0.6);
+        }
+
+        /* Direction 3: Minimalist Clean */
+        .direction-3 .canvas {
+            width: 100%;
+            height: 100%;
+            background: #0a0a0a;
+            position: relative;
+        }
+
+        .direction-3 .modal-battle {
+            position: absolute;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 4px;
+            width: 480px;
+            border: 1px solid #333;
+        }
+
+        .direction-3 .progress-bar {
+            height: 24px;
+            background: #0a0a0a;
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 12px 0;
+            position: relative;
+            border: 1px solid #1a1a1a;
+        }
+
+        .direction-3 .progress-fill-left {
+            position: absolute;
+            left: 0;
+            height: 100%;
+            width: 47%;
+            background: #FF3B3B;
+        }
+
+        .direction-3 .progress-fill-right {
+            position: absolute;
+            right: 0;
+            height: 100%;
+            width: 44%;
+            background: #00F5FF;
+        }
+
+        /* Direction 4: Bold & Chunky */
+        .direction-4 .canvas {
+            width: 100%;
+            height: 100%;
+            background: #0a0a0a;
+            position: relative;
+        }
+
+        .direction-4 .modal-battle {
+            position: absolute;
+            top: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e1e1e;
+            padding: 32px;
+            border-radius: 16px;
+            width: 560px;
+            border: 4px solid #FF3B3B;
+        }
+
+        .direction-4 .progress-bar {
+            height: 48px;
+            background: #0a0a0a;
+            border-radius: 24px;
+            overflow: hidden;
+            margin: 24px 0;
+            position: relative;
+            border: 3px solid #1a1a1a;
+        }
+
+        .direction-4 .progress-fill-left {
+            position: absolute;
+            left: 0;
+            height: 100%;
+            width: 46%;
+            background: #FF3B3B;
+        }
+
+        .direction-4 .progress-fill-right {
+            position: absolute;
+            right: 0;
+            height: 100%;
+            width: 47%;
+            background: #00F5FF;
+        }
+
+        /* Direction 5: Glassmorphism */
+        .direction-5 .canvas {
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(circle at 20% 30%, rgba(255, 59, 59, 0.1), transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(0, 245, 255, 0.1), transparent 50%),
+                #0a0a0a;
+            position: relative;
+        }
+
+        .direction-5 .modal-battle {
+            position: absolute;
+            top: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30, 30, 30, 0.7);
+            backdrop-filter: blur(10px);
+            padding: 24px;
+            border-radius: 12px;
+            width: 520px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .direction-5 .progress-bar {
+            height: 36px;
+            background: rgba(10, 10, 10, 0.6);
+            backdrop-filter: blur(5px);
+            border-radius: 18px;
+            overflow: hidden;
+            margin: 16px 0;
+            position: relative;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Direction 6: Retro Pixel */
+        .direction-6 .canvas {
+            width: 100%;
+            height: 100%;
+            background:
+                repeating-linear-gradient(
+                    0deg,
+                    #0a0a0a 0px,
+                    #0a0a0a 2px,
+                    #0f0f0f 2px,
+                    #0f0f0f 4px
+                );
+            position: relative;
+            image-rendering: pixelated;
+        }
+
+        .direction-6 .modal-battle {
+            position: absolute;
+            top: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e1e1e;
+            padding: 24px;
+            border-radius: 0;
+            width: 500px;
+            border: 4px solid #333;
+            box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        .direction-6 .progress-bar {
+            height: 32px;
+            background: #0a0a0a;
+            border-radius: 0;
+            overflow: hidden;
+            margin: 16px 0;
+            position: relative;
+            border: 3px solid #333;
+        }
+
+        /* Common styles */
+        .modal-title {
+            font-size: 24px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .modal-command {
+            text-align: center;
+            font-size: 16px;
+            color: #AAAAAA;
+            margin-bottom: 16px;
+        }
+
+        .timer {
+            text-align: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #FFE500;
+        }
+
+        .top3-avatars {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 16px;
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #FF3B3B, #FF6B35);
+        }
+
+        .sidebar-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #333;
+        }
+
+        .sidebar-item {
+            font-size: 14px;
+            padding: 8px 0;
+            color: #AAAAAA;
+        }
+
+        .evaluation {
+            background: #1e1e1e;
+            border-radius: 12px;
+            padding: 32px;
+            margin-top: 64px;
+        }
+
+        .evaluation h2 {
+            font-size: 32px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .criteria-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-top: 32px;
+        }
+
+        .criteria-item {
+            background: #141414;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+
+        .criteria-item h3 {
+            font-size: 18px;
+            margin-bottom: 8px;
+            color: #FF3B3B;
+        }
+
+        .criteria-item p {
+            font-size: 14px;
+            color: #AAAAAA;
+            line-height: 1.6;
+        }
+
+        @media (max-width: 1200px) {
+            .mockup-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>conflict-of-streamers</h1>
+            <p>Exploration des Directions de Design • Style agar.io / RTS</p>
+        </div>
+
+        <div class="controls">
+            <button class="btn active" onclick="showAll()">Voir Tout</button>
+            <button class="btn" onclick="showDirection(1)">Direction 1</button>
+            <button class="btn" onclick="showDirection(2)">Direction 2</button>
+            <button class="btn" onclick="showDirection(3)">Direction 3</button>
+            <button class="btn" onclick="showDirection(4)">Direction 4</button>
+            <button class="btn" onclick="showDirection(5)">Direction 5</button>
+            <button class="btn" onclick="showDirection(6)">Direction 6</button>
+        </div>
+
+        <div class="mockup-grid" id="mockupGrid">
+            <!-- Direction 1: Classic Agar.io -->
+            <div class="mockup-card" data-direction="1">
+                <div class="mockup-header">
+                    <div class="mockup-title">Direction 1: Classic Agar.io</div>
+                    <div class="mockup-description">Grid subtil, overlays semi-transparents, style pur agar.io</div>
+                </div>
+                <div class="mockup-preview direction-1">
+                    <div class="canvas">
+                        <!-- Sidebars -->
+                        <div class="sidebar sidebar-left">
+                            <div class="sidebar-title">Contrôles</div>
+                            <div class="sidebar-item">⚔️ Attaquer</div>
+                            <div class="sidebar-item">🛡️ Défendre</div>
+                        </div>
+                        <div class="sidebar sidebar-right">
+                            <div class="sidebar-title">Leaderboard</div>
+                            <div class="sidebar-item">1. Joueur1 - 5 territoires</div>
+                            <div class="sidebar-item">2. Joueur2 - 4 territoires</div>
+                        </div>
+
+                        <!-- Modal Bataille -->
+                        <div class="modal-battle">
+                            <div class="modal-title">BATAILLE: ESPAGNE</div>
+                            <div class="modal-command">Tapez: ATTACK ESPAGNE</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill-left"></div>
+                                <div class="progress-fill-right"></div>
+                            </div>
+                            <div class="timer">⏱️ 24s</div>
+                            <div class="top3-avatars">
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                            </div>
+                        </div>
+
+                        <!-- Mini Chat -->
+                        <div class="mini-chat">
+                            <div class="mini-chat-message correct">Marc_TV: ATTACK ESPAGNE</div>
+                            <div class="mini-chat-message correct">Sarah123: ATTACK ESPAGNE</div>
+                            <div class="mini-chat-message incorrect">NoobGuy: ATACK ESPAGNE</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Direction 2: Neon Glow -->
+            <div class="mockup-card" data-direction="2">
+                <div class="mockup-header">
+                    <div class="mockup-title">Direction 2: Neon Glow</div>
+                    <div class="mockup-description">Bordures lumineuses, glow effects, ambiance cyberpunk</div>
+                </div>
+                <div class="mockup-preview direction-2">
+                    <div class="canvas">
+                        <div class="modal-battle">
+                            <div class="modal-title">⚔️ BATAILLE: ESPAGNE ⚔️</div>
+                            <div class="modal-command">Tapez: ATTACK ESPAGNE</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill-left"></div>
+                                <div class="progress-fill-right"></div>
+                            </div>
+                            <div class="timer">⏱️ 24s restantes</div>
+                            <div class="top3-avatars">
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Direction 3: Minimalist Clean -->
+            <div class="mockup-card" data-direction="3">
+                <div class="mockup-header">
+                    <div class="mockup-title">Direction 3: Minimalist Clean</div>
+                    <div class="mockup-description">Épuré au maximum, bordures fines, focus sur le contenu</div>
+                </div>
+                <div class="mockup-preview direction-3">
+                    <div class="canvas">
+                        <div class="modal-battle">
+                            <div class="modal-title">Bataille: Espagne</div>
+                            <div class="modal-command">ATTACK ESPAGNE</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill-left"></div>
+                                <div class="progress-fill-right"></div>
+                            </div>
+                            <div class="timer">24s</div>
+                            <div class="top3-avatars">
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Direction 4: Bold & Chunky -->
+            <div class="mockup-card" data-direction="4">
+                <div class="mockup-header">
+                    <div class="mockup-title">Direction 4: Bold & Chunky</div>
+                    <div class="mockup-description">Bordures épaisses, éléments massifs, présence forte</div>
+                </div>
+                <div class="mockup-preview direction-4">
+                    <div class="canvas">
+                        <div class="modal-battle">
+                            <div class="modal-title">⚔️ BATAILLE ⚔️</div>
+                            <div class="modal-command">ESPAGNE</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill-left"></div>
+                                <div class="progress-fill-right"></div>
+                            </div>
+                            <div class="timer">⏱️ 24 SECONDES</div>
+                            <div class="top3-avatars">
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Direction 5: Glassmorphism -->
+            <div class="mockup-card" data-direction="5">
+                <div class="mockup-header">
+                    <div class="mockup-title">Direction 5: Glassmorphism</div>
+                    <div class="mockup-description">Transparence, blur effects, légèreté visuelle</div>
+                </div>
+                <div class="mockup-preview direction-5">
+                    <div class="canvas">
+                        <div class="modal-battle">
+                            <div class="modal-title">Bataille: Espagne</div>
+                            <div class="modal-command">Tapez: ATTACK ESPAGNE</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill-left"></div>
+                                <div class="progress-fill-right"></div>
+                            </div>
+                            <div class="timer">⏱️ 24s</div>
+                            <div class="top3-avatars">
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Direction 6: Retro Pixel -->
+            <div class="mockup-card" data-direction="6">
+                <div class="mockup-header">
+                    <div class="mockup-title">Direction 6: Retro Pixel</div>
+                    <div class="mockup-description">Scanlines, coins carrés, vibe rétro gaming</div>
+                </div>
+                <div class="mockup-preview direction-6">
+                    <div class="canvas">
+                        <div class="modal-battle">
+                            <div class="modal-title">BATAILLE: ESPAGNE</div>
+                            <div class="modal-command">>> ATTACK ESPAGNE</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill-left"></div>
+                                <div class="progress-fill-right"></div>
+                            </div>
+                            <div class="timer">TIME: 24s</div>
+                            <div class="top3-avatars">
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                                <div class="avatar"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Evaluation Criteria -->
+        <div class="evaluation">
+            <h2>📋 Critères d'Évaluation</h2>
+            <p style="text-align: center; color: #AAAAAA; margin-bottom: 32px;">
+                Explore chaque direction et évalue-les selon ces critères:
+            </p>
+            <div class="criteria-grid">
+                <div class="criteria-item">
+                    <h3>✨ Clarté Visuelle</h3>
+                    <p>La hiérarchie d'information est-elle claire? Les éléments importants ressortent-ils immédiatement?</p>
+                </div>
+                <div class="criteria-item">
+                    <h3>🎮 Style Gaming</h3>
+                    <p>Le style correspond-il à l'ambiance agar.io/RTS? Est-ce assez énergique et dynamique?</p>
+                </div>
+                <div class="criteria-item">
+                    <h3>⚡ Lisibilité Stream</h3>
+                    <p>Est-ce que tout serait lisible sur un stream Twitch compressé en 1080p/720p?</p>
+                </div>
+                <div class="criteria-item">
+                    <h3>🎯 Focus Gameplay</h3>
+                    <p>L'UI reste-t-elle discrète pour mettre en valeur le canvas et la map?</p>
+                </div>
+                <div class="criteria-item">
+                    <h3>💥 Impact Visuel</h3>
+                    <p>Les moments importants (batailles, victoires) ont-ils l'impact visuel nécessaire?</p>
+                </div>
+                <div class="criteria-item">
+                    <h3>🔥 Excitation</h3>
+                    <p>Le design crée-t-il de l'excitation et de l'énergie? Donne-t-il envie de jouer?</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showAll() {
+            document.querySelectorAll('.mockup-card').forEach(card => {
+                card.style.display = 'block';
+            });
+            setActiveButton(0);
+        }
+
+        function showDirection(num) {
+            document.querySelectorAll('.mockup-card').forEach(card => {
+                if (card.dataset.direction === String(num)) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+            setActiveButton(num);
+        }
+
+        function setActiveButton(num) {
+            document.querySelectorAll('.btn').forEach((btn, index) => {
+                if (index === num) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+    </script>
+</body>
+</html>

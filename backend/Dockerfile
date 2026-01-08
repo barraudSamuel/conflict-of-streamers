@@ -1,24 +1,45 @@
-FROM node:20-slim AS base
+# Multi-stage build for optimized production image
+
+# Stage 1: Build
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Copy root package files
 COPY package*.json ./
+COPY backend/package*.json ./backend/
+COPY shared/package*.json ./shared/
 
-FROM base AS dependencies
-RUN npm ci
+# Install dependencies
+RUN npm install
 
-FROM base AS production-dependencies
-ENV NODE_ENV=production
-RUN npm ci --omit=dev
+# Copy shared and backend source
+COPY shared/ ./shared/
+COPY backend/ ./backend/
 
-FROM dependencies AS development
-COPY . .
-ENV NODE_ENV=development
-CMD ["npm", "run", "dev"]
+# Build shared first, then backend
+RUN npm run build --workspace=shared
+RUN npm run build --workspace=backend
 
-FROM production-dependencies AS production
-COPY . .
-ENV NODE_ENV=production
-ENV PORT=3000
+# Stage 2: Production
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/backend/package*.json ./backend/
+COPY --from=builder /app/shared/package*.json ./shared/
+
+# Install production dependencies only
+RUN npm install --production
+
+# Copy built files
+COPY --from=builder /app/backend/dist ./backend/dist
+COPY --from=builder /app/shared/dist ./shared/dist
+
+WORKDIR /app/backend
+
 EXPOSE 3000
-CMD ["node", "src/server.js"]
+
+CMD ["node", "dist/server.js"]

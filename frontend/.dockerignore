@@ -1,7 +1,12 @@
 node_modules
 dist
-npm-debug.log
+.git
+.gitignore
+README.md
 .env
 .env.*
+*.log
+.DS_Store
 coverage
-*.local
+.vscode
+.idea

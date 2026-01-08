@@ -1,24 +1,47 @@
-services:
-  backend:
-    build:
-      context: ./backend
-      target: production
-    environment:
-      PORT: 3000
-      FRONTEND_URL: http://localhost:8082
-    ports:
-      - "3000:3000"
-    restart: unless-stopped
+# Development environment with hot reload
+version: '3.8'
 
+services:
   frontend:
     build:
-      context: ./frontend
-      target: production
-      args:
-        VITE_API_URL: http://localhost:3000
-        VITE_WS_URL: ws://localhost:3000/ws
+      context: .
+      dockerfile: frontend/Dockerfile.dev
+    container_name: conflict-frontend-dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app/frontend
+      - ./shared:/app/shared
+      - /app/frontend/node_modules
+      - /app/shared/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:3000
+      - VITE_WS_URL=ws://localhost:3000/ws
+    command: npm run dev --workspace=frontend
     depends_on:
       - backend
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    container_name: conflict-backend-dev
     ports:
-      - "8080:80"
-    restart: unless-stopped
+      - "3000:3000"
+    volumes:
+      - ./backend:/app/backend
+      - ./shared:/app/shared
+      - /app/backend/node_modules
+      - /app/shared/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - HOST=0.0.0.0
+      - LOG_LEVEL=debug
+      - CORS_ORIGIN=http://localhost:5173
+    command: npm run dev --workspace=backend
+
+networks:
+  default:
+    name: conflict-network

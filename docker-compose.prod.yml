@@ -1,44 +1,45 @@
-services:
-  backend:
-    build:
-      context: ./backend
-      target: production
-    environment:
-      PORT: ${BACKEND_PORT:-3000}
-      FRONTEND_URL: https://${FRONTEND_DOMAIN:-app.example.com}
-    expose:
-      - ${BACKEND_PORT:-3000}
-    networks:
-      - dokploy-network
-    restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.cos-backend.rule=Host(`${BACKEND_DOMAIN:-api.example.com}`)"
-      - "traefik.http.routers.cos-backend.entrypoints=websecure"
-      - "traefik.http.routers.cos-backend.tls.certresolver=letsencrypt"
-      - "traefik.http.services.cos-backend.loadbalancer.server.port=${BACKEND_PORT:-3000}"
+# Production environment with optimized builds
+version: '3.8'
 
+services:
   frontend:
     build:
-      context: ./frontend
-      target: production
-      args:
-        VITE_API_URL: https://${BACKEND_DOMAIN:-api.example.com}
-        VITE_WS_URL: wss://${BACKEND_DOMAIN:-api.example.com}/ws
-    depends_on:
-      - backend
-    expose:
-      - 80
-    networks:
-      - dokploy-network
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: conflict-frontend-prod
+    ports:
+      - "80:80"
+    environment:
+      - NODE_ENV=production
     restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.cos-frontend.rule=Host(`${FRONTEND_DOMAIN:-app.example.com}`)"
-      - "traefik.http.routers.cos-frontend.entrypoints=websecure"
-      - "traefik.http.routers.cos-frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.services.cos-frontend.loadbalancer.server.port=80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: conflict-backend-prod
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - LOG_LEVEL=info
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 networks:
-  dokploy-network:
-    external: true
+  default:
+    name: conflict-network-prod
