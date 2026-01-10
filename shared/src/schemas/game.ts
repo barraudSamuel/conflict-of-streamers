@@ -1,5 +1,13 @@
 import { z } from 'zod'
 
+// Default values for GameConfig (single source of truth)
+export const DEFAULT_GAME_CONFIG = {
+  battleDuration: 30,
+  cooldownBetweenActions: 10,
+  forceMultiplier: 0.7,
+  territoryBonusRange: [1.0, 2.5] as [number, number]
+} as const
+
 // GameConfig sub-schema with exact defaults and refinements
 export const GameConfigSchema = z.object({
   battleDuration: z.number().int().positive().default(30),

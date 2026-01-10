@@ -3,8 +3,8 @@
  * Handles room creation, retrieval, player management, and TTL cleanup
  */
 
-import type { Room, CreateRoomRequest, GameConfig, Creator, PlayerInRoom, RoomState } from 'shared/types'
-import { GameConfigSchema } from 'shared/schemas'
+import type { Room, CreateRoomRequest, GameConfig, Creator, PlayerInRoom, RoomState, ConfigUpdateEvent } from 'shared/types'
+import { GameConfigSchema, ConfigUpdateEventSchema } from 'shared/schemas'
 import { GameError, NotFoundError } from 'shared/errors'
 import { generateRoomCode } from '../utils/codeGenerator'
 import { generateDefaultAvatar, getPlayerColor } from '../utils/avatarGenerator'
@@ -329,6 +329,58 @@ class RoomManagerClass {
     if (!roomData) return null
 
     return roomData.players.find(p => p.id === playerId) ?? null
+  }
+
+  /**
+   * Update game configuration (creator only, lobby status only)
+   * Returns updated config on success, null on failure
+   */
+  updateConfig(
+    roomCode: string,
+    playerId: string,
+    configUpdate: ConfigUpdateEvent
+  ): { success: boolean; config: GameConfig | null; error?: string } {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+
+    // Room not found
+    if (!roomData) {
+      return { success: false, config: null, error: 'ROOM_NOT_FOUND' }
+    }
+
+    // Verify player is creator
+    const player = roomData.players.find(p => p.id === playerId)
+    if (!player || !player.isCreator) {
+      logger.warn({ roomCode: normalizedCode, playerId }, 'Non-creator attempted config update')
+      return { success: false, config: null, error: 'NOT_CREATOR' }
+    }
+
+    // Verify room is in lobby status (AR7 - immutable after game start)
+    if (roomData.room.status !== 'lobby') {
+      logger.warn({ roomCode: normalizedCode, status: roomData.room.status }, 'Config update rejected - game already started')
+      return { success: false, config: null, error: 'GAME_STARTED' }
+    }
+
+    // Validate config update with Zod (server-side security)
+    const parseResult = ConfigUpdateEventSchema.safeParse(configUpdate)
+    if (!parseResult.success) {
+      logger.warn({ roomCode: normalizedCode, errors: parseResult.error.errors }, 'Invalid config update data')
+      return { success: false, config: null, error: 'INVALID_CONFIG' }
+    }
+
+    // Immutable config update pattern
+    const validatedUpdate = parseResult.data
+    roomData.room.config = {
+      ...roomData.room.config,
+      ...(validatedUpdate.battleDuration !== undefined && { battleDuration: validatedUpdate.battleDuration }),
+      ...(validatedUpdate.cooldownBetweenActions !== undefined && { cooldownBetweenActions: validatedUpdate.cooldownBetweenActions })
+    }
+    roomData.room.updatedAt = new Date().toISOString()
+    roomData.lastActivity = new Date()
+
+    logger.info({ roomCode: normalizedCode, playerId, config: roomData.room.config }, 'Game config updated')
+
+    return { success: true, config: roomData.room.config }
   }
 
   private cleanupStaleRooms(): void {

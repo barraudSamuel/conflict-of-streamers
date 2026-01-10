@@ -9,8 +9,14 @@ import {
   WebSocketMessageSchema,
   TerritorySelectEventSchema,
   TerritorySelectedEventSchema,
-  TerritoryReleasedEventSchema
+  TerritoryReleasedEventSchema,
+  ConfigUpdateEventSchema,
+  ConfigUpdatedEventSchema,
+  CONFIG_LIMITS
 } from '../schemas/events'
+
+// Re-export CONFIG_LIMITS for frontend validation
+export { CONFIG_LIMITS }
 
 // =====================
 // Client → Server Events
@@ -19,6 +25,7 @@ import {
 export type LobbyJoinEvent = z.infer<typeof LobbyJoinEventSchema>
 export type LobbyLeaveEvent = z.infer<typeof LobbyLeaveEventSchema>
 export type TerritorySelectEvent = z.infer<typeof TerritorySelectEventSchema>
+export type ConfigUpdateEvent = z.infer<typeof ConfigUpdateEventSchema>
 
 // =====================
 // Server → Client Events
@@ -30,6 +37,7 @@ export type LobbyPlayerLeftEvent = z.infer<typeof LobbyPlayerLeftEventSchema>
 export type WebSocketErrorEvent = z.infer<typeof WebSocketErrorEventSchema>
 export type TerritorySelectedEvent = z.infer<typeof TerritorySelectedEventSchema>
 export type TerritoryReleasedEvent = z.infer<typeof TerritoryReleasedEventSchema>
+export type ConfigUpdatedEvent = z.infer<typeof ConfigUpdatedEventSchema>
 
 // =====================
 // WebSocket Message Wrapper
@@ -64,5 +72,14 @@ export const TERRITORY_EVENTS = {
   RELEASED: 'territory:released'
 } as const
 
+export const CONFIG_EVENTS = {
+  // Client → Server
+  UPDATE: 'config:update',
+
+  // Server → Client
+  UPDATED: 'config:updated'
+} as const
+
 export type LobbyEventName = (typeof LOBBY_EVENTS)[keyof typeof LOBBY_EVENTS]
 export type TerritoryEventName = (typeof TERRITORY_EVENTS)[keyof typeof TERRITORY_EVENTS]
+export type ConfigEventName = (typeof CONFIG_EVENTS)[keyof typeof CONFIG_EVENTS]

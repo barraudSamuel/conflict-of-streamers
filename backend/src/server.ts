@@ -4,8 +4,8 @@ import websocket from '@fastify/websocket'
 import { randomUUID } from 'crypto'
 import { ZodError } from 'zod'
 import { ValidationError, AppError, GameError, NotFoundError, UnauthorizedError } from 'shared/errors'
-import { LobbyJoinEventSchema, TerritorySelectEventSchema } from 'shared/schemas'
-import { LOBBY_EVENTS, TERRITORY_EVENTS } from 'shared/types'
+import { LobbyJoinEventSchema, TerritorySelectEventSchema, ConfigUpdateEventSchema } from 'shared/schemas'
+import { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS } from 'shared/types'
 import { roomRoutes } from './routes/rooms'
 import { connectionManager } from './websocket/ConnectionManager'
 import { broadcastToRoom } from './websocket/broadcast'
@@ -236,6 +236,59 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
           })
 
           fastify.log.info({ connectionId, roomCode, playerId, territoryId }, 'Territory selected')
+          break
+        }
+
+        case CONFIG_EVENTS.UPDATE: {
+          // Validate config update data
+          const parseResult = ConfigUpdateEventSchema.safeParse(data)
+          if (!parseResult.success) {
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: { code: 'VALIDATION_ERROR', message: 'Invalid config data' }
+            }))
+            return
+          }
+
+          // Get connection info
+          const connectionInfo = connectionManager.getConnection(connectionId)
+          if (!connectionInfo) {
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: { code: 'NOT_JOINED', message: 'Must join lobby first' }
+            }))
+            return
+          }
+
+          const { roomCode, playerId } = connectionInfo
+
+          // Try to update config (RoomManager validates creator and room status)
+          const result = roomManager.updateConfig(roomCode, playerId, parseResult.data)
+
+          if (!result.success) {
+            const errorMessages: Record<string, string> = {
+              'ROOM_NOT_FOUND': 'Room not found',
+              'NOT_CREATOR': 'Only the creator can modify game configuration',
+              'GAME_STARTED': 'Configuration cannot be changed after game has started',
+              'INVALID_CONFIG': 'Invalid configuration values'
+            }
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: {
+                code: result.error ?? 'CONFIG_UPDATE_FAILED',
+                message: errorMessages[result.error ?? ''] ?? 'Failed to update configuration'
+              }
+            }))
+            return
+          }
+
+          // Broadcast updated config to all players in room
+          broadcastToRoom(roomCode, CONFIG_EVENTS.UPDATED, {
+            battleDuration: result.config!.battleDuration,
+            cooldownBetweenActions: result.config!.cooldownBetweenActions
+          })
+
+          fastify.log.info({ connectionId, roomCode, playerId, config: result.config }, 'Config updated')
           break
         }
 

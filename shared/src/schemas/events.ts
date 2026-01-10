@@ -59,6 +59,47 @@ export const TerritoryReleasedEventSchema = z.object({
 })
 
 // =====================
+// Config Events
+// =====================
+
+// Validation limits for config fields (Story 2.6)
+export const CONFIG_LIMITS = {
+  battleDuration: {
+    min: 10,   // 10 seconds minimum
+    max: 120,  // 2 minutes maximum
+    default: 30
+  },
+  cooldownBetweenActions: {
+    min: 5,    // 5 seconds minimum
+    max: 60,   // 1 minute maximum
+    default: 10
+  }
+} as const
+
+// Client sends to update game configuration (creator only)
+export const ConfigUpdateEventSchema = z.object({
+  battleDuration: z.number()
+    .int()
+    .min(CONFIG_LIMITS.battleDuration.min)
+    .max(CONFIG_LIMITS.battleDuration.max)
+    .optional(),
+  cooldownBetweenActions: z.number()
+    .int()
+    .min(CONFIG_LIMITS.cooldownBetweenActions.min)
+    .max(CONFIG_LIMITS.cooldownBetweenActions.max)
+    .optional()
+}).refine(
+  (data) => data.battleDuration !== undefined || data.cooldownBetweenActions !== undefined,
+  { message: 'At least one config field must be provided' }
+)
+
+// Server broadcasts updated configuration to all players
+export const ConfigUpdatedEventSchema = z.object({
+  battleDuration: z.number().int(),
+  cooldownBetweenActions: z.number().int()
+})
+
+// =====================
 // WebSocket Message Wrapper
 // =====================
 

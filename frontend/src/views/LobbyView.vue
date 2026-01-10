@@ -9,7 +9,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, Card, Container, PageLayout } from '@/components/ui'
 import InstructionsCard from '@/components/lobby/InstructionsCard.vue'
-import GameConfigCard from '@/components/lobby/GameConfigCard.vue'
+import EditableGameConfigCard from '@/components/lobby/EditableGameConfigCard.vue'
 import TerritorySelectionCanvas from '@/components/game/TerritorySelectionCanvas.vue'
 import { useLobbyStore } from '@/stores/lobbyStore'
 import { useTerritoryStore } from '@/stores/territoryStore'
@@ -29,6 +29,7 @@ const players = computed(() => lobbyStore.players)
 const playerCount = computed(() => lobbyStore.playerCount)
 const currentPlayerId = computed(() => lobbyStore.currentPlayerId)
 const gameConfig = computed(() => lobbyStore.config)
+const isCreator = computed(() => lobbyStore.isCreator)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
 const copied = ref(false)
@@ -221,8 +222,8 @@ const connectionStatusClass = computed(() => {
           </div>
         </Card>
 
-        <!-- Game Configuration Section (Story 2.4) -->
-        <GameConfigCard :config="gameConfig" />
+        <!-- Game Configuration Section (Story 2.4, 2.6) -->
+        <EditableGameConfigCard :config="gameConfig" :is-creator="isCreator" />
 
         <!-- Territory Selection Section (Story 2.5) -->
         <Card :padding="'md'" class="animate-fade-in">

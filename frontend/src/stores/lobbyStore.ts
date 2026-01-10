@@ -111,6 +111,32 @@ export const useLobbyStore = defineStore('lobby', () => {
     selectedTerritoryId.value = null
   }
 
+  // Update config (immutable pattern for reactivity)
+  function updateConfig(newConfig: Partial<GameConfig>) {
+    if (!roomData.value) return
+
+    // Guard against undefined config - use empty object as fallback
+    const currentConfig = roomData.value.config ?? {}
+
+    roomData.value = {
+      ...roomData.value,
+      config: {
+        ...currentConfig,
+        ...newConfig
+      } as GameConfig
+    }
+  }
+
+  // Sync config from WebSocket (full replace)
+  function syncConfig(config: GameConfig) {
+    if (!roomData.value) return
+
+    roomData.value = {
+      ...roomData.value,
+      config
+    }
+  }
+
   return {
     isInLobby,
     selectedTerritoryId,
@@ -135,6 +161,8 @@ export const useLobbyStore = defineStore('lobby', () => {
     removePlayer,
     syncPlayers,
     selectTerritory,
-    clearSelection
+    clearSelection,
+    updateConfig,
+    syncConfig
   }
 })

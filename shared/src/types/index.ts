@@ -38,6 +38,9 @@ export type {
   TerritorySelectEvent,
   TerritorySelectedEvent,
   TerritoryReleasedEvent,
-  TerritoryEventName
+  TerritoryEventName,
+  ConfigUpdateEvent,
+  ConfigUpdatedEvent,
+  ConfigEventName
 } from './events'
-export { LOBBY_EVENTS, TERRITORY_EVENTS } from './events'
+export { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, CONFIG_LIMITS } from './events'

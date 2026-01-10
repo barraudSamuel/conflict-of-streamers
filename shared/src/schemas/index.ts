@@ -11,7 +11,7 @@ export const BaseEntitySchema = z.object({
 
 // Export all entity schemas
 export { PlayerSchema, PLAYER_COLORS } from './player'
-export { GameSchema, GameConfigSchema } from './game'
+export { GameSchema, GameConfigSchema, DEFAULT_GAME_CONFIG } from './game'
 export { TerritorySchema, CellSchema, TerritorySizeSchema, TerritorySelectionSchema } from './territory'
 export { BattleSchema, BattleStatsSchema } from './battle'
 export {
@@ -38,5 +38,8 @@ export {
   WebSocketMessageSchema,
   TerritorySelectEventSchema,
   TerritorySelectedEventSchema,
-  TerritoryReleasedEventSchema
+  TerritoryReleasedEventSchema,
+  ConfigUpdateEventSchema,
+  ConfigUpdatedEventSchema,
+  CONFIG_LIMITS
 } from './events'

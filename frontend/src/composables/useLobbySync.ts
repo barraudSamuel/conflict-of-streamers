@@ -18,9 +18,11 @@ import type {
   LobbyPlayerLeftEvent,
   WebSocketErrorEvent,
   TerritorySelectedEvent,
-  TerritoryReleasedEvent
+  TerritoryReleasedEvent,
+  ConfigUpdatedEvent
 } from 'shared/types'
-import { LOBBY_EVENTS, TERRITORY_EVENTS } from 'shared/types'
+import { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS } from 'shared/types'
+import { DEFAULT_GAME_CONFIG } from 'shared/schemas'
 
 const WS_URL = `${import.meta.env.VITE_WS_URL || 'ws://localhost:3000'}/ws`
 
@@ -89,6 +91,19 @@ export function useLobbySync(roomCode: string, playerId: string) {
           if (releaseData.playerId !== playerId) {
             territoryStore.removePlayerSelection(releaseData.playerId, releaseData.territoryId)
           }
+          break
+        }
+
+        // Config update events (Story 2.6)
+        case CONFIG_EVENTS.UPDATED: {
+          const configData = data as ConfigUpdatedEvent
+          lobbyStore.syncConfig({
+            battleDuration: configData.battleDuration,
+            cooldownBetweenActions: configData.cooldownBetweenActions,
+            // Preserve existing values for fields not in the event, using shared defaults
+            forceMultiplier: lobbyStore.config?.forceMultiplier ?? DEFAULT_GAME_CONFIG.forceMultiplier,
+            territoryBonusRange: lobbyStore.config?.territoryBonusRange ?? [...DEFAULT_GAME_CONFIG.territoryBonusRange]
+          })
           break
         }
       }
