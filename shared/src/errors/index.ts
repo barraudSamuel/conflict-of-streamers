@@ -20,9 +20,29 @@ export class ValidationError extends AppError {
   }
 }
 
+/**
+ * GameError - For game logic errors
+ *
+ * Two usage patterns:
+ * 1. Generic game error (400 Bad Request):
+ *    `new GameError('Something went wrong')`
+ *
+ * 2. Specific conflict error (409 Conflict) - use for business logic conflicts:
+ *    `new GameError('PSEUDO_TAKEN', 'Ce pseudo est déjà utilisé')`
+ *    `new GameError('ROOM_FULL', 'La partie est complète')`
+ *    `new GameError('GAME_STARTED', 'Cette partie a déjà commencé')`
+ */
 export class GameError extends AppError {
-  constructor(message: string, details?: unknown) {
-    super(message, 'GAME_ERROR', 400, details)
+  constructor(message: string, details?: unknown)
+  constructor(code: string, message: string, details?: unknown)
+  constructor(messageOrCode: string, messageOrDetails?: string | unknown, details?: unknown) {
+    if (typeof messageOrDetails === 'string') {
+      // Called with (code, message, details?) → 409 Conflict for business logic conflicts
+      super(messageOrDetails, messageOrCode, 409, details)
+    } else {
+      // Called with (message, details?) → 400 Bad Request for generic game errors
+      super(messageOrCode, 'GAME_ERROR', 400, messageOrDetails)
+    }
     this.name = 'GameError'
   }
 }

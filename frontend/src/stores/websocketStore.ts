@@ -16,10 +16,13 @@ const logger = {
   }
 }
 
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
+
 export const useWebSocketStore = defineStore('websocket', () => {
   const ws = ref<WebSocket | null>(null)
   const url = ref<string>('')
   const connectionState = ref<number>(WebSocket.CLOSED)
+  const connectionStatus = ref<ConnectionStatus>('disconnected')
   const isConnected = computed(() => connectionState.value === WebSocket.OPEN)
   const retryCount = ref<number>(0)
   const maxRetries = ref<number>(10)
@@ -27,11 +30,14 @@ export const useWebSocketStore = defineStore('websocket', () => {
 
   function connect(wsUrl: string) {
     url.value = wsUrl
+    connectionStatus.value = retryCount.value > 0 ? 'reconnecting' : 'connecting'
+
     try {
       ws.value = new WebSocket(wsUrl)
 
       ws.value.onopen = () => {
         connectionState.value = WebSocket.OPEN
+        connectionStatus.value = 'connected'
         retryCount.value = 0 // Reset retry count on successful connection
         logger.info('Connected')
       }
@@ -46,6 +52,7 @@ export const useWebSocketStore = defineStore('websocket', () => {
 
         // Auto-reconnect with exponential backoff
         if (url.value && retryCount.value < maxRetries.value) {
+          connectionStatus.value = 'reconnecting'
           retryCount.value++
           // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s max
           const delay = Math.min(1000 * Math.pow(2, retryCount.value - 1), 30000)
@@ -55,12 +62,16 @@ export const useWebSocketStore = defineStore('websocket', () => {
             if (url.value) connect(url.value)
           }, delay)
         } else if (retryCount.value >= maxRetries.value) {
+          connectionStatus.value = 'disconnected'
           logger.error('Max reconnection attempts reached, giving up')
+        } else {
+          connectionStatus.value = 'disconnected'
         }
       }
     } catch (error) {
       logger.error('Connection failed', error)
       connectionState.value = WebSocket.CLOSED
+      connectionStatus.value = 'disconnected'
     }
   }
 
@@ -91,6 +102,7 @@ export const useWebSocketStore = defineStore('websocket', () => {
     ws.value?.close()
     ws.value = null
     connectionState.value = WebSocket.CLOSED
+    connectionStatus.value = 'disconnected'
   }
 
   // Cleanup function for component unmount
@@ -99,5 +111,5 @@ export const useWebSocketStore = defineStore('websocket', () => {
     disconnect()
   }
 
-  return { ws, isConnected, connectionState, retryCount, maxRetries, connect, send, disconnect, cleanup }
+  return { ws, isConnected, connectionState, connectionStatus, retryCount, maxRetries, connect, send, disconnect, cleanup }
 })

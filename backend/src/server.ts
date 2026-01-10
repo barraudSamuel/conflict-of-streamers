@@ -1,8 +1,15 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import websocket from '@fastify/websocket'
+import { randomUUID } from 'crypto'
 import { ZodError } from 'zod'
 import { ValidationError, AppError, GameError, NotFoundError, UnauthorizedError } from 'shared/errors'
+import { LobbyJoinEventSchema } from 'shared/schemas'
+import { LOBBY_EVENTS } from 'shared/types'
+import { roomRoutes } from './routes/rooms'
+import { connectionManager } from './websocket/ConnectionManager'
+import { broadcastToRoom } from './websocket/broadcast'
+import { roomManager } from './managers/RoomManager'
 
 const PORT = Number(process.env.PORT) || 3000
 const HOST = process.env.HOST || '0.0.0.0'
@@ -91,31 +98,111 @@ fastify.get('/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() }
 })
 
-// WebSocket endpoint
+// Register room routes
+await fastify.register(roomRoutes)
+
+// Helper function to handle disconnection (explicit leave or socket close)
+function handleDisconnect(connectionId: string, reason: 'left' | 'disconnected'): void {
+  const result = connectionManager.removeConnection(connectionId)
+  if (!result) return
+
+  const { roomCode, playerId } = result
+
+  // Optionally remove player from room state on disconnect
+  // Note: For now we keep the player in RoomManager for potential reconnection
+  // roomManager.removePlayer(roomCode, playerId)
+
+  // Broadcast to remaining players
+  broadcastToRoom(roomCode, LOBBY_EVENTS.PLAYER_LEFT, { playerId, reason })
+  fastify.log.info({ connectionId, roomCode, playerId, reason }, 'Player left lobby')
+}
+
+// WebSocket endpoint - Lobby real-time synchronization
 fastify.get('/ws', { websocket: true }, (socket, req) => {
-  fastify.log.info('WebSocket client connected')
+  const connectionId = randomUUID()
+  fastify.log.info({ connectionId }, 'WebSocket client connected')
 
-  socket.on('message', (message) => {
+  socket.on('message', async (message) => {
     try {
-      const data = JSON.parse(message.toString())
-      fastify.log.info({ event: data.event }, 'WebSocket message received')
+      const { event, data } = JSON.parse(message.toString())
+      fastify.log.debug({ connectionId, event }, 'WebSocket message received')
 
-      // Echo back for now
-      socket.send(JSON.stringify({
-        event: 'echo',
-        data: { received: data }
-      }))
+      switch (event) {
+        case LOBBY_EVENTS.JOIN: {
+          // Validate join data with Zod
+          const parseResult = LobbyJoinEventSchema.safeParse(data)
+          if (!parseResult.success) {
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: { code: 'VALIDATION_ERROR', message: 'Invalid join data' }
+            }))
+            return
+          }
+
+          const { roomCode, playerId } = parseResult.data
+
+          // Validate player is in room
+          if (!roomManager.isPlayerInRoom(roomCode, playerId)) {
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: { code: 'INVALID_JOIN', message: 'Player not in room' }
+            }))
+            return
+          }
+
+          // Get room state with null check
+          const roomState = roomManager.getRoomState(roomCode)
+          if (!roomState) {
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: { code: 'ROOM_NOT_FOUND', message: 'Room state unavailable' }
+            }))
+            return
+          }
+
+          // Add connection to manager
+          connectionManager.addConnection(connectionId, socket, roomCode, playerId)
+
+          // Send current state to joining player
+          socket.send(JSON.stringify({
+            event: LOBBY_EVENTS.SYNC,
+            data: { players: roomState.players, config: roomState.config }
+          }))
+
+          // Get player data for broadcast to others
+          const player = roomState.players.find(p => p.id === playerId)
+          if (player) {
+            broadcastToRoom(roomCode, LOBBY_EVENTS.PLAYER_JOINED, player, connectionId)
+          }
+
+          fastify.log.info({ connectionId, roomCode, playerId }, 'Player joined lobby via WebSocket')
+          break
+        }
+
+        case LOBBY_EVENTS.LEAVE: {
+          handleDisconnect(connectionId, 'left')
+          break
+        }
+
+        default:
+          fastify.log.warn({ connectionId, event }, 'Unknown WebSocket event')
+      }
     } catch (error) {
-      fastify.log.error({ err: error }, 'Failed to parse WebSocket message')
+      fastify.log.error({ err: error, connectionId }, 'Failed to process WebSocket message')
+      socket.send(JSON.stringify({
+        event: LOBBY_EVENTS.ERROR,
+        data: { code: 'PARSE_ERROR', message: 'Invalid message format' }
+      }))
     }
   })
 
   socket.on('close', () => {
-    fastify.log.info('WebSocket client disconnected')
+    handleDisconnect(connectionId, 'disconnected')
+    fastify.log.info({ connectionId }, 'WebSocket client disconnected')
   })
 
   socket.on('error', (error) => {
-    fastify.log.error({ err: error }, 'WebSocket error')
+    fastify.log.error({ err: error, connectionId }, 'WebSocket error')
   })
 })
 

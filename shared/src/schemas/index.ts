@@ -14,3 +14,26 @@ export { PlayerSchema, PLAYER_COLORS } from './player'
 export { GameSchema, GameConfigSchema } from './game'
 export { TerritorySchema } from './territory'
 export { BattleSchema, BattleStatsSchema } from './battle'
+export {
+  ROOM_CODE_REGEX,
+  CreateRoomRequestSchema,
+  CreateRoomResponseSchema,
+  CreatorSchema,
+  RoomSchema,
+  RoomExistsResponseSchema,
+  PlayerInRoomSchema,
+  RoomStateSchema,
+  JoinRoomRequestSchema,
+  JoinRoomResponseSchema
+} from './room'
+
+// WebSocket event schemas
+export {
+  LobbyJoinEventSchema,
+  LobbyLeaveEventSchema,
+  LobbySyncEventSchema,
+  LobbyPlayerJoinedEventSchema,
+  LobbyPlayerLeftEventSchema,
+  WebSocketErrorEventSchema,
+  WebSocketMessageSchema
+} from './events'
