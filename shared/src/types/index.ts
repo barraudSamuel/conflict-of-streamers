@@ -50,7 +50,7 @@ export type {
 } from './events'
 export { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS, CONFIG_LIMITS } from './events'
 
-// Twitch integration types (Story 3.1 + 3.2)
+// Twitch integration types (Story 3.1 + 3.2 + 3.3)
 export type {
   TwitchMessage,
   TwitchConnectionStatus,
@@ -58,5 +58,9 @@ export type {
   CommandType,
   ParsedCommand,
   TwitchBattleStats,
-  CommandCallback
+  CommandCallback,
+  // Story 3.3: Unique user tracking types
+  UserCommandStats,
+  UserSpamStats,
+  TwitchBattleStatsSerializable
 } from './twitch'

@@ -1,6 +1,6 @@
 /**
- * Unit Tests for BattleCounter (Story 3.2)
- * Tests command counting functionality
+ * Unit Tests for BattleCounter (Story 3.2 + 3.3)
+ * Tests command counting functionality and unique user tracking
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -208,6 +208,274 @@ describe('BattleCounter', () => {
       // Cleanup
       battleCounter.endBattle(battle1)
       battleCounter.endBattle(battle2)
+    })
+  })
+
+  // Story 3.3: Unique user tracking tests
+  describe('Story 3.3: Unique User Tracking', () => {
+    describe('startBattle initializes unique user sets', () => {
+      it('initializes empty uniqueAttackers and uniqueDefenders sets', () => {
+        battleCounter.startBattle(battleId)
+
+        const stats = battleCounter.getStats(battleId)
+        expect(stats?.uniqueAttackers).toBeInstanceOf(Set)
+        expect(stats?.uniqueDefenders).toBeInstanceOf(Set)
+        expect(stats?.uniqueAttackers.size).toBe(0)
+        expect(stats?.uniqueDefenders.size).toBe(0)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+
+      it('initializes empty userMessageCounts Map', () => {
+        battleCounter.startBattle(battleId)
+
+        const stats = battleCounter.getStats(battleId)
+        expect(stats?.userMessageCounts).toBeInstanceOf(Map)
+        expect(stats?.userMessageCounts.size).toBe(0)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+    })
+
+    describe('addCommand tracks unique users (AC: 1, 2, 3)', () => {
+      it('counts unique attackers correctly (AC: 1)', () => {
+        battleCounter.startBattle(battleId)
+
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user2'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1')) // duplicate
+
+        expect(battleCounter.getUniqueAttackerCount(battleId)).toBe(2)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+
+      it('counts unique defenders correctly', () => {
+        battleCounter.startBattle(battleId)
+
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T3', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T3', 'user1')) // duplicate
+
+        expect(battleCounter.getUniqueDefenderCount(battleId)).toBe(1)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+
+      it('tracks users separately for attack and defend (AC: 4)', () => {
+        battleCounter.startBattle(battleId)
+
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T3', 'user1'))
+
+        expect(battleCounter.getUniqueAttackerCount(battleId)).toBe(1)
+        expect(battleCounter.getUniqueDefenderCount(battleId)).toBe(1)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+
+      it('normalizes usernames case-insensitively (AC: 2, 3)', () => {
+        battleCounter.startBattle(battleId)
+
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'Sam'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'SAM'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'sAm'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'sam'))
+
+        expect(battleCounter.getUniqueAttackerCount(battleId)).toBe(1)
+
+        // But message count should be 4
+        const stats = battleCounter.getStats(battleId)
+        expect(stats?.attackCount).toBe(4)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+
+      it('tracks per-user message counts (AC: 6)', () => {
+        battleCounter.startBattle(battleId)
+
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T3', 'user1'))
+
+        const userCounts = battleCounter.getUserMessageCounts(battleId)
+        expect(userCounts).not.toBeNull()
+        expect(userCounts?.get('user1')?.attackCount).toBe(2)
+        expect(userCounts?.get('user1')?.defendCount).toBe(1)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+    })
+
+    describe('isolates users between battles (AC: 5)', () => {
+      it('same user counted separately in different battles', () => {
+        const battle2 = 'battle-2'
+
+        battleCounter.startBattle(battleId)
+        battleCounter.startBattle(battle2)
+
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'sam'))
+        battleCounter.addCommand(battle2, createCommand('ATTACK', 'T5', 'sam'))
+
+        expect(battleCounter.getUniqueAttackerCount(battleId)).toBe(1)
+        expect(battleCounter.getUniqueAttackerCount(battle2)).toBe(1)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+        battleCounter.endBattle(battle2)
+      })
+    })
+
+    describe('getTopSpammers (AC: 6)', () => {
+      it('returns top spammers sorted by total messages', () => {
+        battleCounter.startBattle(battleId)
+
+        // user1: 3 messages
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+
+        // user2: 2 messages
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user2'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user2'))
+
+        // user3: 1 message
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user3'))
+
+        const topSpammers = battleCounter.getTopSpammers(battleId, 2)
+
+        expect(topSpammers).toHaveLength(2)
+        expect(topSpammers[0].username).toBe('user1')
+        expect(topSpammers[0].totalMessages).toBe(3)
+        expect(topSpammers[1].username).toBe('user2')
+        expect(topSpammers[1].totalMessages).toBe(2)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+
+      it('returns empty array for non-existent battle', () => {
+        const spammers = battleCounter.getTopSpammers('non-existent')
+        expect(spammers).toEqual([])
+      })
+
+      it('defaults to 5 spammers if limit not specified', () => {
+        battleCounter.startBattle(battleId)
+
+        for (let i = 0; i < 10; i++) {
+          battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', `user${i}`))
+        }
+
+        const topSpammers = battleCounter.getTopSpammers(battleId)
+        expect(topSpammers).toHaveLength(5)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+    })
+
+    describe('serializeStats (AC: 4)', () => {
+      it('serializes stats correctly for WebSocket transmission', () => {
+        battleCounter.startBattle(battleId)
+
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T3', 'user2'))
+
+        const serialized = battleCounter.serializeStats(battleId)
+
+        expect(serialized).toBeDefined()
+        expect(serialized?.battleId).toBe(battleId)
+        expect(serialized?.attackCount).toBe(1)
+        expect(serialized?.defendCount).toBe(1)
+        expect(serialized?.uniqueAttackerCount).toBe(1)
+        expect(serialized?.uniqueDefenderCount).toBe(1)
+        expect(serialized?.uniqueAttackers).toContain('user1')
+        expect(serialized?.uniqueDefenders).toContain('user2')
+        expect(serialized?.userMessageCounts).toHaveLength(2)
+        expect(serialized?.commandCount).toBe(2)
+
+        // Verify arrays not Sets
+        expect(Array.isArray(serialized?.uniqueAttackers)).toBe(true)
+        expect(Array.isArray(serialized?.uniqueDefenders)).toBe(true)
+        expect(Array.isArray(serialized?.userMessageCounts)).toBe(true)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+
+      it('returns null for non-existent battle', () => {
+        const serialized = battleCounter.serializeStats('non-existent')
+        expect(serialized).toBeNull()
+      })
+    })
+
+    describe('endBattle includes unique counts in final stats', () => {
+      it('returns stats with unique user counts', () => {
+        battleCounter.startBattle(battleId)
+
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user2'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T3', 'user3'))
+
+        const finalStats = battleCounter.endBattle(battleId)
+
+        expect(finalStats?.uniqueAttackers.size).toBe(2)
+        expect(finalStats?.uniqueDefenders.size).toBe(1)
+        expect(finalStats?.userMessageCounts.size).toBe(3)
+      })
+    })
+
+    describe('getUniqueAttackerCount / getUniqueDefenderCount', () => {
+      it('returns 0 for non-existent battle', () => {
+        expect(battleCounter.getUniqueAttackerCount('non-existent')).toBe(0)
+        expect(battleCounter.getUniqueDefenderCount('non-existent')).toBe(0)
+      })
+    })
+
+    describe('getUserMessageCounts', () => {
+      it('returns null for non-existent battle', () => {
+        expect(battleCounter.getUserMessageCounts('non-existent')).toBeNull()
+      })
+    })
+
+    describe('empty username edge case (Code Review Fix)', () => {
+      it('ignores commands with empty usernames', () => {
+        battleCounter.startBattle(battleId)
+
+        // Command with empty username should be ignored
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', ''))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', '   '))
+
+        const stats = battleCounter.getStats(battleId)
+        expect(stats?.attackCount).toBe(0)
+        expect(stats?.uniqueAttackers.size).toBe(0)
+        expect(stats?.userMessageCounts.size).toBe(0)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
+
+      it('processes valid username after ignoring empty ones', () => {
+        battleCounter.startBattle(battleId)
+
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', ''))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'validuser'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', '   '))
+
+        const stats = battleCounter.getStats(battleId)
+        expect(stats?.attackCount).toBe(1)
+        expect(stats?.uniqueAttackers.size).toBe(1)
+        expect(stats?.uniqueAttackers.has('validuser')).toBe(true)
+
+        // Cleanup
+        battleCounter.endBattle(battleId)
+      })
     })
   })
 })

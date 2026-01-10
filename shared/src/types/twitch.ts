@@ -60,6 +60,71 @@ export interface TwitchBattleStats {
   commands: ParsedCommand[]
   /** Battle start timestamp (ms since epoch) */
   startedAt: number
+
+  // Story 3.3: Unique user tracking
+  /** Set of unique attacker usernames (normalized lowercase) */
+  uniqueAttackers: Set<string>
+  /** Set of unique defender usernames (normalized lowercase) */
+  uniqueDefenders: Set<string>
+  /** Per-user message counts for leaderboard */
+  userMessageCounts: Map<string, UserCommandStats>
+}
+
+/**
+ * Story 3.3: Per-user command statistics
+ * Tracks individual user's attack/defend message counts
+ */
+export interface UserCommandStats {
+  /** Number of attack commands from this user */
+  attackCount: number
+  /** Number of defend commands from this user */
+  defendCount: number
+  /** Display name (for UI rendering) */
+  displayName: string
+}
+
+/**
+ * Story 3.3: User spam stats for top 5 leaderboard (Story 4.8)
+ * Used for battle summary display
+ */
+export interface UserSpamStats {
+  /** Normalized username (lowercase) */
+  username: string
+  /** Twitch display name */
+  displayName: string
+  /** Total messages (attack + defend) */
+  totalMessages: number
+  /** Number of attack messages */
+  attackMessages: number
+  /** Number of defend messages */
+  defendMessages: number
+}
+
+/**
+ * Story 3.3: Serializable version of TwitchBattleStats for JSON/WebSocket
+ * Converts Set/Map to arrays for JSON serialization
+ */
+export interface TwitchBattleStatsSerializable {
+  /** Unique battle identifier */
+  battleId: string
+  /** Number of valid ATTACK commands received */
+  attackCount: number
+  /** Number of valid DEFEND commands received */
+  defendCount: number
+  /** Number of unique attackers */
+  uniqueAttackerCount: number
+  /** Number of unique defenders */
+  uniqueDefenderCount: number
+  /** Array of unique attacker usernames */
+  uniqueAttackers: string[]
+  /** Array of unique defender usernames */
+  uniqueDefenders: string[]
+  /** Per-user message counts as array for JSON */
+  userMessageCounts: { username: string; stats: UserCommandStats }[]
+  /** Battle start timestamp (ms since epoch) */
+  startedAt: number
+  /** Total number of commands tracked */
+  commandCount: number
 }
 
 /** Callback type for command listeners */
