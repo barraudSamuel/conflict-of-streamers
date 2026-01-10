@@ -18,6 +18,11 @@ import {
   TerritoryUpdateEventSchema,
   TwitchErrorEventSchema,
   TwitchConnectionStatusEventSchema,
+  AttackActionEventSchema,
+  AttackFailedEventSchema,
+  AttackFailedCodeSchema,
+  BattleStartEventSchema,
+  BattleEndEventSchema,
   CONFIG_LIMITS
 } from '../schemas/events'
 
@@ -60,6 +65,16 @@ export type TerritoryUpdateEvent = z.infer<typeof TerritoryUpdateEventSchema>
 
 export type TwitchErrorEvent = z.infer<typeof TwitchErrorEventSchema>
 export type TwitchConnectionStatusEvent = z.infer<typeof TwitchConnectionStatusEventSchema>
+
+// =====================
+// Battle Events (Story 4.2)
+// =====================
+
+export type AttackActionEvent = z.infer<typeof AttackActionEventSchema>
+export type AttackFailedEvent = z.infer<typeof AttackFailedEventSchema>
+export type AttackFailedCode = z.infer<typeof AttackFailedCodeSchema>
+export type BattleStartEvent = z.infer<typeof BattleStartEventSchema>
+export type BattleEndEvent = z.infer<typeof BattleEndEventSchema>
 
 // =====================
 // WebSocket Message Wrapper
@@ -119,8 +134,20 @@ export const TWITCH_EVENTS = {
   CONNECTION_STATUS: 'twitch:connectionStatus'
 } as const
 
+// Story 4.2: Battle events
+export const BATTLE_EVENTS = {
+  // Client → Server
+  ATTACK: 'action:attack',
+
+  // Server → Client
+  ATTACK_FAILED: 'action:attackFailed',
+  START: 'battle:start',
+  END: 'battle:end'
+} as const
+
 export type LobbyEventName = (typeof LOBBY_EVENTS)[keyof typeof LOBBY_EVENTS]
 export type TerritoryEventName = (typeof TERRITORY_EVENTS)[keyof typeof TERRITORY_EVENTS]
 export type ConfigEventName = (typeof CONFIG_EVENTS)[keyof typeof CONFIG_EVENTS]
 export type GameEventName = (typeof GAME_EVENTS)[keyof typeof GAME_EVENTS]
 export type TwitchEventName = (typeof TWITCH_EVENTS)[keyof typeof TWITCH_EVENTS]
+export type BattleEventName = (typeof BATTLE_EVENTS)[keyof typeof BATTLE_EVENTS]

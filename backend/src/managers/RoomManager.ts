@@ -3,9 +3,9 @@
  * Handles room creation, retrieval, player management, and TTL cleanup
  */
 
-import type { Room, CreateRoomRequest, GameConfig, Creator, PlayerInRoom, RoomState, ConfigUpdateEvent, Territory } from 'shared/types'
+import type { Room, CreateRoomRequest, GameConfig, Creator, PlayerInRoom, RoomState, ConfigUpdateEvent, Territory, AttackFailedCode, BattleStartEvent } from 'shared/types'
 import { GameConfigSchema, ConfigUpdateEventSchema } from 'shared/schemas'
-import { getInitialTerritories } from 'shared/data'
+import { getInitialTerritories, areTerritoriesAdjacent } from 'shared/data'
 import { GameError, NotFoundError } from 'shared/errors'
 import { generateRoomCode } from '../utils/codeGenerator'
 import { generateDefaultAvatar, getPlayerColor } from '../utils/avatarGenerator'
@@ -23,9 +23,30 @@ interface TerritorySelection {
   color: string
 }
 
+// Story 4.2: Active battle tracking
+interface ActiveBattle {
+  id: string
+  attackerId: string           // Player ID
+  defenderId: string | null    // Player ID (null for BOT)
+  attackerTerritoryId: string
+  defenderTerritoryId: string
+  startTime: string            // ISO timestamp
+  duration: number             // Battle duration in seconds
+  timeoutId: ReturnType<typeof setTimeout>  // For cleanup
+}
+
+// Story 4.2: Cooldown tracking per territory
+interface TerritoryCooldown {
+  territoryId: string
+  startTime: number            // Date.now() timestamp
+  duration: number             // Cooldown duration in ms
+}
+
 interface GameState {
   territories: Territory[]
   startedAt: string
+  activeBattles: Map<string, ActiveBattle>     // battleId -> battle
+  cooldowns: Map<string, TerritoryCooldown>    // territoryId -> cooldown
 }
 
 interface RoomWithMeta {
@@ -444,7 +465,9 @@ class RoomManagerClass {
 
     roomData.gameState = {
       territories,
-      startedAt: new Date().toISOString()
+      startedAt: new Date().toISOString(),
+      activeBattles: new Map(),
+      cooldowns: new Map()
     }
 
     logger.info({ roomCode: normalizedCode, playerId, playerCount: roomData.players.length }, 'Game started')
@@ -545,6 +568,274 @@ class RoomManagerClass {
     logger.info({ roomCode: normalizedCode, territoryId, previousOwnerId, newOwnerId }, 'Territory owner updated')
 
     return { success: true, previousOwnerId }
+  }
+
+  // =====================
+  // Story 4.2: Attack Validation and Battle Management
+  // =====================
+
+  /**
+   * Validate an attack request (Story 4.2)
+   * Returns validation result with error code if invalid
+   */
+  validateAttack(
+    roomCode: string,
+    playerId: string,
+    fromTerritoryId: string,
+    toTerritoryId: string
+  ): { valid: boolean; code?: AttackFailedCode; message?: string; cooldownRemaining?: number } {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+
+    // Check room exists and game is in progress
+    if (!roomData) {
+      return { valid: false, code: 'GAME_NOT_STARTED', message: 'Partie introuvable' }
+    }
+
+    if (roomData.room.status !== 'playing' || !roomData.gameState) {
+      return { valid: false, code: 'GAME_NOT_STARTED', message: 'La partie n\'a pas encore commencé' }
+    }
+
+    const { territories, cooldowns } = roomData.gameState
+
+    // Find attacking territory
+    const attackerTerritory = territories.find(t => t.id === fromTerritoryId)
+    if (!attackerTerritory) {
+      return { valid: false, code: 'NOT_YOUR_TERRITORY', message: 'Territoire source invalide' }
+    }
+
+    // Check ownership
+    if (attackerTerritory.ownerId !== playerId) {
+      return { valid: false, code: 'NOT_YOUR_TERRITORY', message: 'Ce territoire ne vous appartient pas' }
+    }
+
+    // Find target territory
+    const targetTerritory = territories.find(t => t.id === toTerritoryId)
+    if (!targetTerritory) {
+      return { valid: false, code: 'INVALID_TARGET', message: 'Territoire cible invalide' }
+    }
+
+    // Cannot attack own territory
+    if (targetTerritory.ownerId === playerId) {
+      return { valid: false, code: 'INVALID_TARGET', message: 'Vous ne pouvez pas attaquer votre propre territoire' }
+    }
+
+    // Check adjacency
+    if (!areTerritoriesAdjacent(attackerTerritory, targetTerritory)) {
+      return { valid: false, code: 'NOT_ADJACENT', message: 'Ce territoire n\'est pas adjacent' }
+    }
+
+    // Check if attacking territory is already attacking (FR19)
+    if (attackerTerritory.isAttacking) {
+      return { valid: false, code: 'ALREADY_ATTACKING', message: 'Ce territoire est déjà en train d\'attaquer' }
+    }
+
+    // Check if attacking territory is under attack (FR19)
+    if (attackerTerritory.isUnderAttack) {
+      return { valid: false, code: 'UNDER_ATTACK', message: 'Ce territoire est actuellement attaqué' }
+    }
+
+    // Check if target territory is already in battle
+    if (targetTerritory.isUnderAttack || targetTerritory.isAttacking) {
+      return { valid: false, code: 'UNDER_ATTACK', message: 'Le territoire cible est déjà en combat' }
+    }
+
+    // Check cooldown
+    const cooldown = cooldowns.get(fromTerritoryId)
+    if (cooldown) {
+      const elapsed = Date.now() - cooldown.startTime
+      const remaining = Math.max(0, cooldown.duration - elapsed)
+      if (remaining > 0) {
+        const remainingSeconds = Math.ceil(remaining / 1000)
+        return {
+          valid: false,
+          code: 'COOLDOWN_ACTIVE',
+          message: `Cooldown actif, attendez ${remainingSeconds} secondes`,
+          cooldownRemaining: remainingSeconds
+        }
+      }
+      // Cooldown expired, remove it
+      cooldowns.delete(fromTerritoryId)
+    }
+
+    return { valid: true }
+  }
+
+  /**
+   * Start a battle between two territories (Story 4.2)
+   * Returns battle event data for broadcasting
+   */
+  startBattle(
+    roomCode: string,
+    attackerId: string,
+    fromTerritoryId: string,
+    toTerritoryId: string,
+    onBattleEnd: (roomCode: string, battleId: string) => void
+  ): BattleStartEvent | null {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+
+    if (!roomData || !roomData.gameState) {
+      return null
+    }
+
+    const { territories, activeBattles } = roomData.gameState
+    const config = roomData.room.config
+
+    // Find territories
+    const attackerTerritory = territories.find(t => t.id === fromTerritoryId)
+    const targetTerritory = territories.find(t => t.id === toTerritoryId)
+
+    if (!attackerTerritory || !targetTerritory) {
+      return null
+    }
+
+    // Create battle
+    const battleId = randomUUID()
+    const startTime = new Date().toISOString()
+    const duration = config.battleDuration
+
+    // Set territory battle flags - IMMUTABLE UPDATE
+    roomData.gameState.territories = territories.map(t => {
+      if (t.id === fromTerritoryId) {
+        return { ...t, isAttacking: true }
+      }
+      if (t.id === toTerritoryId) {
+        return { ...t, isUnderAttack: true }
+      }
+      return t
+    })
+
+    // Create timeout for battle end
+    const timeoutId = setTimeout(() => {
+      onBattleEnd(normalizedCode, battleId)
+    }, duration * 1000)
+
+    // Store active battle
+    const battle: ActiveBattle = {
+      id: battleId,
+      attackerId,
+      defenderId: targetTerritory.ownerId,
+      attackerTerritoryId: fromTerritoryId,
+      defenderTerritoryId: toTerritoryId,
+      startTime,
+      duration,
+      timeoutId
+    }
+    activeBattles.set(battleId, battle)
+
+    roomData.lastActivity = new Date()
+
+    logger.info({
+      roomCode: normalizedCode,
+      battleId,
+      attackerId,
+      defenderId: targetTerritory.ownerId,
+      fromTerritoryId,
+      toTerritoryId,
+      duration
+    }, 'Battle started')
+
+    // Build command strings for Twitch chat
+    const command = {
+      attack: `ATTACK ${toTerritoryId}`,
+      defend: `DEFEND ${toTerritoryId}`
+    }
+
+    return {
+      battleId,
+      attackerId,
+      defenderId: targetTerritory.ownerId,
+      attackerTerritoryId: fromTerritoryId,
+      defenderTerritoryId: toTerritoryId,
+      duration,
+      startTime,
+      command
+    }
+  }
+
+  /**
+   * End a battle and update territories (Story 4.2)
+   * Called when battle timeout fires
+   */
+  endBattle(roomCode: string, battleId: string): ActiveBattle | null {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+
+    if (!roomData || !roomData.gameState) {
+      return null
+    }
+
+    const { territories, activeBattles, cooldowns } = roomData.gameState
+    const battle = activeBattles.get(battleId)
+
+    if (!battle) {
+      return null
+    }
+
+    // Clear the timeout (in case called manually)
+    clearTimeout(battle.timeoutId)
+
+    // Remove battle from active battles
+    activeBattles.delete(battleId)
+
+    // Reset territory battle flags - IMMUTABLE UPDATE
+    roomData.gameState.territories = territories.map(t => {
+      if (t.id === battle.attackerTerritoryId) {
+        return { ...t, isAttacking: false }
+      }
+      if (t.id === battle.defenderTerritoryId) {
+        return { ...t, isUnderAttack: false }
+      }
+      return t
+    })
+
+    // Start cooldown on attacking territory
+    const cooldownDuration = roomData.room.config.cooldownBetweenActions * 1000
+    cooldowns.set(battle.attackerTerritoryId, {
+      territoryId: battle.attackerTerritoryId,
+      startTime: Date.now(),
+      duration: cooldownDuration
+    })
+
+    roomData.lastActivity = new Date()
+
+    logger.info({
+      roomCode: normalizedCode,
+      battleId,
+      attackerTerritoryId: battle.attackerTerritoryId,
+      defenderTerritoryId: battle.defenderTerritoryId
+    }, 'Battle ended')
+
+    return battle
+  }
+
+  /**
+   * Get active battle by ID
+   */
+  getActiveBattle(roomCode: string, battleId: string): ActiveBattle | null {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+
+    if (!roomData || !roomData.gameState) {
+      return null
+    }
+
+    return roomData.gameState.activeBattles.get(battleId) ?? null
+  }
+
+  /**
+   * Get all active battles for a room
+   */
+  getActiveBattles(roomCode: string): ActiveBattle[] {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+
+    if (!roomData || !roomData.gameState) {
+      return []
+    }
+
+    return Array.from(roomData.gameState.activeBattles.values())
   }
 
   private async cleanupStaleRooms(): Promise<void> {

@@ -47,5 +47,11 @@ export {
   TerritoryUpdateEventSchema,
   TwitchErrorEventSchema,
   TwitchConnectionStatusEventSchema,
+  // Story 4.2: Battle events
+  AttackActionEventSchema,
+  AttackFailedEventSchema,
+  AttackFailedCodeSchema,
+  BattleStartEventSchema,
+  BattleEndEventSchema,
   CONFIG_LIMITS
 } from './events'

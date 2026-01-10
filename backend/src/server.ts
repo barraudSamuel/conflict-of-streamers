@@ -4,8 +4,8 @@ import websocket from '@fastify/websocket'
 import { randomUUID } from 'crypto'
 import { ZodError } from 'zod'
 import { ValidationError, AppError, GameError, NotFoundError, UnauthorizedError } from 'shared/errors'
-import { LobbyJoinEventSchema, TerritorySelectEventSchema, ConfigUpdateEventSchema, GameStartEventSchema } from 'shared/schemas'
-import { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS } from 'shared/types'
+import { LobbyJoinEventSchema, TerritorySelectEventSchema, ConfigUpdateEventSchema, GameStartEventSchema, AttackActionEventSchema } from 'shared/schemas'
+import { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS, BATTLE_EVENTS } from 'shared/types'
 import type { TwitchConnectionState } from 'shared/types'
 import { roomRoutes } from './routes/rooms'
 import { connectionManager } from './websocket/ConnectionManager'
@@ -407,6 +407,110 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
           }
 
           fastify.log.info({ connectionId, roomCode, playerId }, 'Game started')
+          break
+        }
+
+        // Story 4.2: Handle attack action
+        case BATTLE_EVENTS.ATTACK: {
+          // Validate attack data
+          const parseResult = AttackActionEventSchema.safeParse(data)
+          if (!parseResult.success) {
+            socket.send(JSON.stringify({
+              event: BATTLE_EVENTS.ATTACK_FAILED,
+              data: { code: 'INVALID_DATA', message: 'Données d\'attaque invalides' }
+            }))
+            return
+          }
+
+          // Get connection info
+          const connectionInfo = connectionManager.getConnection(connectionId)
+          if (!connectionInfo) {
+            socket.send(JSON.stringify({
+              event: BATTLE_EVENTS.ATTACK_FAILED,
+              data: { code: 'NOT_JOINED', message: 'Vous devez d\'abord rejoindre la partie' }
+            }))
+            return
+          }
+
+          const { roomCode, playerId } = connectionInfo
+          const { fromTerritoryId, toTerritoryId } = parseResult.data
+
+          // Validate attack
+          const validation = roomManager.validateAttack(roomCode, playerId, fromTerritoryId, toTerritoryId)
+          if (!validation.valid) {
+            socket.send(JSON.stringify({
+              event: BATTLE_EVENTS.ATTACK_FAILED,
+              data: {
+                code: validation.code,
+                message: validation.message,
+                cooldownRemaining: validation.cooldownRemaining
+              }
+            }))
+            return
+          }
+
+          // Start battle with callback for when battle ends
+          const battleEvent = roomManager.startBattle(
+            roomCode,
+            playerId,
+            fromTerritoryId,
+            toTerritoryId,
+            (endRoomCode: string, battleId: string) => {
+              // Battle end callback - will be extended in Story 4.7
+              const battle = roomManager.endBattle(endRoomCode, battleId)
+              if (battle) {
+                // Broadcast battle:end event (Story 4.2 - needed for frontend state cleanup)
+                // Note: Full battle resolution with forces will be in Story 4.7
+                broadcastToRoom(endRoomCode, BATTLE_EVENTS.END, {
+                  battleId,
+                  winnerId: null,              // Placeholder until Story 4.7
+                  attackerWon: false,          // Placeholder until Story 4.7
+                  attackerForce: 0,            // Placeholder until Story 4.7
+                  defenderForce: 0,            // Placeholder until Story 4.7
+                  territoryTransferred: false  // Placeholder until Story 4.7
+                })
+
+                // Get updated game state for territory status broadcast
+                const gameState = roomManager.getGameState(endRoomCode)
+                if (gameState) {
+                  // Broadcast territory updates (battle flags reset)
+                  broadcastToRoom(endRoomCode, GAME_EVENTS.TERRITORY_UPDATE, {
+                    territoryId: battle.attackerTerritoryId,
+                    newOwnerId: gameState.territories.find(t => t.id === battle.attackerTerritoryId)?.ownerId ?? null,
+                    previousOwnerId: null,
+                    newColor: gameState.territories.find(t => t.id === battle.attackerTerritoryId)?.color ?? null
+                  })
+                  broadcastToRoom(endRoomCode, GAME_EVENTS.TERRITORY_UPDATE, {
+                    territoryId: battle.defenderTerritoryId,
+                    newOwnerId: gameState.territories.find(t => t.id === battle.defenderTerritoryId)?.ownerId ?? null,
+                    previousOwnerId: null,
+                    newColor: gameState.territories.find(t => t.id === battle.defenderTerritoryId)?.color ?? null
+                  })
+                }
+                fastify.log.info({ roomCode: endRoomCode, battleId }, 'Battle ended via timeout')
+              }
+            }
+          )
+
+          if (!battleEvent) {
+            socket.send(JSON.stringify({
+              event: BATTLE_EVENTS.ATTACK_FAILED,
+              data: { code: 'GAME_NOT_STARTED', message: 'Erreur lors du démarrage du combat' }
+            }))
+            return
+          }
+
+          // Broadcast battle start to all players in room
+          broadcastToRoom(roomCode, BATTLE_EVENTS.START, battleEvent)
+
+          fastify.log.info({
+            connectionId,
+            roomCode,
+            playerId,
+            battleId: battleEvent.battleId,
+            fromTerritoryId,
+            toTerritoryId
+          }, 'Attack initiated, battle started')
           break
         }
 

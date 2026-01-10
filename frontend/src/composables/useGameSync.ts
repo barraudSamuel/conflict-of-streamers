@@ -11,12 +11,16 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useWebSocketStore } from '@/stores/websocketStore'
 import { useTerritoryStore } from '@/stores/territoryStore'
 import { useLobbyStore } from '@/stores/lobbyStore'
+import { useBattleStore } from '@/stores/battleStore'
 import type {
   GameStateInitEvent,
   TerritoryUpdateEvent,
-  WebSocketErrorEvent
+  WebSocketErrorEvent,
+  BattleStartEvent,
+  BattleEndEvent,
+  AttackFailedEvent
 } from 'shared/types'
-import { GAME_EVENTS, LOBBY_EVENTS } from 'shared/types'
+import { GAME_EVENTS, LOBBY_EVENTS, BATTLE_EVENTS } from 'shared/types'
 
 const WS_URL = `${import.meta.env.VITE_WS_URL || 'ws://localhost:3000'}/ws`
 
@@ -24,6 +28,7 @@ export function useGameSync(roomCode: string, playerId: string) {
   const wsStore = useWebSocketStore()
   const territoryStore = useTerritoryStore()
   const lobbyStore = useLobbyStore()
+  const battleStore = useBattleStore()
 
   const connectionError = ref<string | null>(null)
   const isInitialized = ref(false)
@@ -54,6 +59,30 @@ export function useGameSync(roomCode: string, playerId: string) {
         case GAME_EVENTS.TERRITORY_UPDATE: {
           const updateData = data as TerritoryUpdateEvent
           territoryStore.updateTerritoryOwner(updateData)
+          break
+        }
+
+        // Story 4.2: Battle started
+        case BATTLE_EVENTS.START: {
+          const battleData = data as BattleStartEvent
+          battleStore.handleBattleStart(battleData)
+          // Update territory battle flags
+          territoryStore.setTerritoryBattleStatus(battleData.attackerTerritoryId, { isAttacking: true })
+          territoryStore.setTerritoryBattleStatus(battleData.defenderTerritoryId, { isUnderAttack: true })
+          break
+        }
+
+        // Story 4.2: Attack failed
+        case BATTLE_EVENTS.ATTACK_FAILED: {
+          const failedData = data as AttackFailedEvent
+          battleStore.handleAttackFailed(failedData)
+          break
+        }
+
+        // Story 4.2: Battle ended (cleanup active battle state)
+        case BATTLE_EVENTS.END: {
+          const endData = data as BattleEndEvent
+          battleStore.handleBattleEnd(endData.battleId)
           break
         }
 

@@ -1,15 +1,18 @@
 <script setup lang="ts">
 /**
- * GameMap.vue - Canvas 2D rendering of the game map (Story 4.1)
+ * GameMap.vue - Canvas 2D rendering of the game map (Story 4.1 + 4.2)
  *
  * Renders the 20x20 grid with territories during gameplay.
  * Uses Canvas 2D API (AD-1: NEVER PixiJS/WebGL)
  * Supports real-time updates via store reactivity (< 200ms NFR1)
+ * Story 4.2: Attack initiation UI and battle indicators
  */
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useTerritoryStore } from '@/stores/territoryStore'
 import { useLobbyStore } from '@/stores/lobbyStore'
+import { useBattleStore } from '@/stores/battleStore'
+import { usePlayerStore } from '@/stores/playerStore'
 import type { Territory, Cell } from 'shared/types'
 import { BOT_TERRITORY_COLOR, GRID_LINE_COLOR, TERRITORY_BORDER_COLOR } from 'shared/schemas'
 
@@ -27,14 +30,27 @@ const emit = defineEmits<{
 // Stores
 const territoryStore = useTerritoryStore()
 const lobbyStore = useLobbyStore()
+const battleStore = useBattleStore()
+const playerStore = usePlayerStore()
 
 const { territories } = storeToRefs(territoryStore)
+const { selectedSourceTerritory, selectedTargetTerritory, allActiveBattles } = storeToRefs(battleStore)
 
 // Canvas constants
 const CELL_SIZE = 32 // pixels per cell
 const GRID_SIZE = 20 // 20x20 grid
 const CANVAS_SIZE = GRID_SIZE * CELL_SIZE // 640x640 pixels
 const LABEL_FONT_SIZE = 10
+
+// Story 4.2: Attack indicator colors
+const ATTACK_COLORS = {
+  attackable: 'rgba(0, 255, 127, 0.25)',      // Green overlay for valid targets
+  selected: 'rgba(255, 255, 255, 0.3)',       // White overlay for selected source
+  attacking: 'rgba(255, 59, 59, 0.4)',        // Red pulse for attacking territory
+  defending: 'rgba(255, 230, 0, 0.4)',        // Yellow pulse for defending territory
+  battleLine: '#FFFFFF',                       // White line connecting territories
+  cooldown: 'rgba(128, 128, 128, 0.3)'        // Gray overlay for cooldown
+}
 
 // Canvas refs
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -45,6 +61,31 @@ const ctx = computed(() => {
   if (!canvasRef.value) return null
   return canvasRef.value.getContext('2d')
 })
+
+// Story 4.2: Get current player's territories
+const myTerritories = computed(() => {
+  const myId = playerStore.currentPlayer?.id
+  if (!myId) return []
+  return territories.value.filter(t => t.ownerId === myId)
+})
+
+// Story 4.2: Get attackable territories when a source is selected
+const attackableTerritories = computed(() => {
+  if (!selectedSourceTerritory.value) return []
+
+  const source = territories.value.find(t => t.id === selectedSourceTerritory.value)
+  if (!source) return []
+
+  // Get adjacent territories that are NOT owned by current player
+  const myId = playerStore.currentPlayer?.id
+  return territoryStore.getAdjacentTerritories(source.id)
+    .filter(t => t.ownerId !== myId && !t.isUnderAttack && !t.isAttacking)
+})
+
+// Story 4.2: Check if a territory can be attacked
+function canAttackTerritory(territoryId: string): boolean {
+  return attackableTerritories.value.some(t => t.id === territoryId)
+}
 
 /**
  * Clear the canvas with background color
@@ -100,6 +141,8 @@ function drawTerritory(territory: Territory, isHovered: boolean): void {
   const baseColor = getTerritoryColor(territory)
   const isUnderAttack = territory.isUnderAttack
   const isAttacking = territory.isAttacking
+  const isSelected = territory.id === selectedSourceTerritory.value
+  const isAttackable = canAttackTerritory(territory.id)
 
   // Draw each cell
   territory.cells.forEach(cell => {
@@ -112,6 +155,28 @@ function drawTerritory(territory: Territory, isHovered: boolean): void {
       CELL_SIZE - 2
     )
 
+    // Story 4.2: Selected source territory (for attack)
+    if (isSelected && props.interactive) {
+      ctx.value!.fillStyle = ATTACK_COLORS.selected
+      ctx.value!.fillRect(
+        cell.x * CELL_SIZE + 1,
+        cell.y * CELL_SIZE + 1,
+        CELL_SIZE - 2,
+        CELL_SIZE - 2
+      )
+    }
+
+    // Story 4.2: Attackable territory indicator
+    if (isAttackable && props.interactive) {
+      ctx.value!.fillStyle = ATTACK_COLORS.attackable
+      ctx.value!.fillRect(
+        cell.x * CELL_SIZE + 1,
+        cell.y * CELL_SIZE + 1,
+        CELL_SIZE - 2,
+        CELL_SIZE - 2
+      )
+    }
+
     // Hover effect (if interactive)
     if (isHovered && props.interactive) {
       ctx.value!.fillStyle = 'rgba(255, 255, 255, 0.2)'
@@ -123,9 +188,9 @@ function drawTerritory(territory: Territory, isHovered: boolean): void {
       )
     }
 
-    // Attack/defense indicators
+    // Story 4.2: Battle state indicators (pulsing effect simulated with solid color)
     if (isUnderAttack) {
-      ctx.value!.fillStyle = 'rgba(255, 0, 0, 0.3)'
+      ctx.value!.fillStyle = ATTACK_COLORS.defending
       ctx.value!.fillRect(
         cell.x * CELL_SIZE + 1,
         cell.y * CELL_SIZE + 1,
@@ -135,7 +200,7 @@ function drawTerritory(territory: Territory, isHovered: boolean): void {
     }
 
     if (isAttacking) {
-      ctx.value!.fillStyle = 'rgba(0, 255, 0, 0.3)'
+      ctx.value!.fillStyle = ATTACK_COLORS.attacking
       ctx.value!.fillRect(
         cell.x * CELL_SIZE + 1,
         cell.y * CELL_SIZE + 1,
@@ -146,7 +211,7 @@ function drawTerritory(territory: Territory, isHovered: boolean): void {
   })
 
   // Draw territory border
-  drawTerritoryBorder(territory, isHovered)
+  drawTerritoryBorder(territory, isHovered || isSelected || isAttackable)
 }
 
 /**
@@ -222,6 +287,70 @@ function drawTerritoryLabel(territory: Territory): void {
 }
 
 /**
+ * Story 4.2: Calculate center of territory for battle lines
+ */
+function getTerritoryCenter(territory: Territory): { x: number; y: number } {
+  const sumX = territory.cells.reduce((sum, c) => sum + c.x, 0)
+  const sumY = territory.cells.reduce((sum, c) => sum + c.y, 0)
+  return {
+    x: (sumX / territory.cells.length) * CELL_SIZE + CELL_SIZE / 2,
+    y: (sumY / territory.cells.length) * CELL_SIZE + CELL_SIZE / 2
+  }
+}
+
+/**
+ * Story 4.2: Draw battle connection lines between fighting territories
+ */
+function drawBattleLines(): void {
+  if (!ctx.value) return
+
+  allActiveBattles.value.forEach(battle => {
+    const attacker = territories.value.find(t => t.id === battle.attackerTerritoryId)
+    const defender = territories.value.find(t => t.id === battle.defenderTerritoryId)
+
+    if (!attacker || !defender) return
+
+    const attackerCenter = getTerritoryCenter(attacker)
+    const defenderCenter = getTerritoryCenter(defender)
+
+    // Draw battle line
+    ctx.value!.strokeStyle = ATTACK_COLORS.battleLine
+    ctx.value!.lineWidth = 3
+    ctx.value!.setLineDash([5, 5]) // Dashed line for battle
+
+    ctx.value!.beginPath()
+    ctx.value!.moveTo(attackerCenter.x, attackerCenter.y)
+    ctx.value!.lineTo(defenderCenter.x, defenderCenter.y)
+    ctx.value!.stroke()
+
+    // Draw arrow head pointing to defender
+    const angle = Math.atan2(
+      defenderCenter.y - attackerCenter.y,
+      defenderCenter.x - attackerCenter.x
+    )
+    const arrowSize = 12
+
+    ctx.value!.setLineDash([]) // Solid for arrow
+    ctx.value!.fillStyle = ATTACK_COLORS.battleLine
+    ctx.value!.beginPath()
+    ctx.value!.moveTo(defenderCenter.x, defenderCenter.y)
+    ctx.value!.lineTo(
+      defenderCenter.x - arrowSize * Math.cos(angle - Math.PI / 6),
+      defenderCenter.y - arrowSize * Math.sin(angle - Math.PI / 6)
+    )
+    ctx.value!.lineTo(
+      defenderCenter.x - arrowSize * Math.cos(angle + Math.PI / 6),
+      defenderCenter.y - arrowSize * Math.sin(angle + Math.PI / 6)
+    )
+    ctx.value!.closePath()
+    ctx.value!.fill()
+  })
+
+  // Reset line dash
+  ctx.value!.setLineDash([])
+}
+
+/**
  * Main render function - redraws the entire canvas
  */
 function render(): void {
@@ -238,6 +367,9 @@ function render(): void {
   territories.value.forEach(territory => {
     drawTerritoryLabel(territory)
   })
+
+  // Story 4.2: Draw battle lines on top of everything
+  drawBattleLines()
 }
 
 /**
@@ -305,7 +437,12 @@ function handleMouseLeave(): void {
 }
 
 /**
- * Handle click for territory selection
+ * Handle click for territory selection (Story 4.2 - Attack Flow)
+ *
+ * Click flow:
+ * 1. Click on own territory -> Select as attack source
+ * 2. Click on attackable territory -> Initiate attack
+ * 3. Click elsewhere -> Clear selection
  */
 function handleClick(event: MouseEvent): void {
   if (!props.interactive) return
@@ -314,7 +451,48 @@ function handleClick(event: MouseEvent): void {
   if (!cell) return
 
   const territory = findTerritoryAtCell(cell.x, cell.y)
-  if (!territory) return
+  if (!territory) {
+    // Click on empty area - clear selection
+    battleStore.setSelectedSource(null)
+    render()
+    return
+  }
+
+  const myId = playerStore.currentPlayer?.id
+  const isMyTerritory = territory.ownerId === myId
+
+  // If no source selected yet
+  if (!selectedSourceTerritory.value) {
+    if (isMyTerritory && !territory.isAttacking && !territory.isUnderAttack) {
+      // Select own territory as attack source
+      battleStore.setSelectedSource(territory.id)
+      render()
+    }
+    emit('territory-click', territory.id)
+    return
+  }
+
+  // Source is already selected
+  if (territory.id === selectedSourceTerritory.value) {
+    // Click on same territory - deselect
+    battleStore.setSelectedSource(null)
+    render()
+    return
+  }
+
+  if (isMyTerritory) {
+    // Click on another own territory - switch source
+    battleStore.setSelectedSource(territory.id)
+    render()
+    return
+  }
+
+  // Check if this territory can be attacked
+  if (canAttackTerritory(territory.id)) {
+    // Initiate attack!
+    battleStore.initiateAttack(selectedSourceTerritory.value, territory.id)
+    // Selection will be cleared when battle:start is received
+  }
 
   emit('territory-click', territory.id)
 }
@@ -327,6 +505,15 @@ onMounted(() => {
 // Re-render when territories change
 watch(
   territories,
+  () => {
+    render()
+  },
+  { deep: true }
+)
+
+// Story 4.2: Re-render when battle state changes
+watch(
+  [selectedSourceTerritory, allActiveBattles],
   () => {
     render()
   },

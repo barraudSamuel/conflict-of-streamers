@@ -49,9 +49,16 @@ export type {
   GameEventName,
   TwitchErrorEvent,
   TwitchConnectionStatusEvent,
-  TwitchEventName
+  TwitchEventName,
+  // Story 4.2: Battle event types
+  AttackActionEvent,
+  AttackFailedEvent,
+  AttackFailedCode,
+  BattleStartEvent,
+  BattleEndEvent,
+  BattleEventName
 } from './events'
-export { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS, CONFIG_LIMITS } from './events'
+export { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS, BATTLE_EVENTS, CONFIG_LIMITS } from './events'
 
 // Twitch integration types (Story 3.1 + 3.2 + 3.3 + 3.4)
 export type {
