@@ -11,7 +11,7 @@ export interface BaseEntity {
 // Export all entity types
 export type { Player } from './player'
 export type { Game, GameConfig } from './game'
-export type { Territory } from './territory'
+export type { Territory, Cell, TerritorySize, TerritorySelection } from './territory'
 export type { Battle, BattleStats } from './battle'
 export type {
   CreateRoomRequest,
@@ -34,6 +34,10 @@ export type {
   LobbyPlayerLeftEvent,
   WebSocketErrorEvent,
   WebSocketMessage,
-  LobbyEventName
+  LobbyEventName,
+  TerritorySelectEvent,
+  TerritorySelectedEvent,
+  TerritoryReleasedEvent,
+  TerritoryEventName
 } from './events'
-export { LOBBY_EVENTS } from './events'
+export { LOBBY_EVENTS, TERRITORY_EVENTS } from './events'

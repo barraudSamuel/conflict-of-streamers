@@ -13,10 +13,17 @@ import { randomUUID } from 'crypto'
 
 const MAX_PLAYERS = 10
 
+interface TerritorySelection {
+  playerId: string
+  territoryId: string
+  color: string
+}
+
 interface RoomWithMeta {
   room: Room
   lastActivity: Date
   players: PlayerInRoom[]
+  territorySelections: Map<string, TerritorySelection> // playerId -> selection
 }
 
 interface CreateRoomResult {
@@ -104,7 +111,8 @@ class RoomManagerClass {
     this.rooms.set(code, {
       room,
       lastActivity: new Date(),
-      players: [creatorPlayer]
+      players: [creatorPlayer],
+      territorySelections: new Map()
     })
 
     return { room, creator }
@@ -228,6 +236,99 @@ class RoomManagerClass {
     if (!roomData) return false
 
     return roomData.room.playerIds.includes(playerId)
+  }
+
+  /**
+   * Select a territory for a player
+   * Returns the previous selection (if any) for broadcast, or null if failed
+   */
+  selectTerritory(
+    roomCode: string,
+    playerId: string,
+    territoryId: string
+  ): { success: boolean; previousTerritoryId: string | null; playerColor: string | null } {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+    if (!roomData) return { success: false, previousTerritoryId: null, playerColor: null }
+
+    // Verify player exists in room
+    const player = roomData.players.find(p => p.id === playerId)
+    if (!player) return { success: false, previousTerritoryId: null, playerColor: null }
+
+    // Check if territory is already selected by another player
+    for (const [otherId, selection] of roomData.territorySelections) {
+      if (selection.territoryId === territoryId && otherId !== playerId) {
+        // Territory already taken by someone else
+        return { success: false, previousTerritoryId: null, playerColor: null }
+      }
+    }
+
+    // Get previous selection for this player
+    const previousSelection = roomData.territorySelections.get(playerId)
+    const previousTerritoryId = previousSelection?.territoryId ?? null
+
+    // Set new selection
+    roomData.territorySelections.set(playerId, {
+      playerId,
+      territoryId,
+      color: player.color
+    })
+
+    roomData.lastActivity = new Date()
+    logger.info({ roomCode: normalizedCode, playerId, territoryId }, 'Territory selected')
+
+    return { success: true, previousTerritoryId, playerColor: player.color }
+  }
+
+  /**
+   * Clear a player's territory selection
+   */
+  clearTerritorySelection(roomCode: string, playerId: string): string | null {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+    if (!roomData) return null
+
+    const previousSelection = roomData.territorySelections.get(playerId)
+    if (!previousSelection) return null
+
+    roomData.territorySelections.delete(playerId)
+    roomData.lastActivity = new Date()
+    logger.info({ roomCode: normalizedCode, playerId }, 'Territory selection cleared')
+
+    return previousSelection.territoryId
+  }
+
+  /**
+   * Get all territory selections for a room
+   */
+  getTerritorySelections(roomCode: string): TerritorySelection[] {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+    if (!roomData) return []
+
+    return Array.from(roomData.territorySelections.values())
+  }
+
+  /**
+   * Get a player's territory selection
+   */
+  getPlayerTerritorySelection(roomCode: string, playerId: string): TerritorySelection | null {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+    if (!roomData) return null
+
+    return roomData.territorySelections.get(playerId) ?? null
+  }
+
+  /**
+   * Get player info by ID
+   */
+  getPlayer(roomCode: string, playerId: string): PlayerInRoom | null {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+    if (!roomData) return null
+
+    return roomData.players.find(p => p.id === playerId) ?? null
   }
 
   private cleanupStaleRooms(): void {

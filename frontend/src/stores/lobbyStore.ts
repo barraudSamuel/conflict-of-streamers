@@ -23,6 +23,8 @@ export const useLobbyStore = defineStore('lobby', () => {
   const creator = computed(() => roomData.value?.creator ?? null)
   const currentPlayer = computed(() => roomData.value?.currentPlayer ?? null)
   const currentPlayerId = computed(() => roomData.value?.currentPlayer?.id ?? null)
+  const playerId = computed(() => roomData.value?.currentPlayer?.id ?? null)
+  const playerColor = computed(() => roomData.value?.currentPlayer?.color ?? null)
   const players = computed(() => roomData.value?.players ?? [])
   const playerCount = computed(() => roomData.value?.players.length ?? 0)
   const config = computed(() => roomData.value?.config ?? null)
@@ -119,6 +121,8 @@ export const useLobbyStore = defineStore('lobby', () => {
     creator,
     currentPlayer,
     currentPlayerId,
+    playerId,
+    playerColor,
     players,
     playerCount,
     config,

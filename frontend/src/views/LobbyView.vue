@@ -3,18 +3,25 @@
  * LobbyView - Game lobby with real-time player synchronization
  * Story 2.3 - Real-time lobby synchronization via WebSocket
  * Story 2.4 - Display Game Instructions in Lobby (FR11)
+ * Story 2.5 - Territory Selection on Grid (FR8, FR9)
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, Card, Container, PageLayout } from '@/components/ui'
 import InstructionsCard from '@/components/lobby/InstructionsCard.vue'
 import GameConfigCard from '@/components/lobby/GameConfigCard.vue'
+import TerritorySelectionCanvas from '@/components/game/TerritorySelectionCanvas.vue'
 import { useLobbyStore } from '@/stores/lobbyStore'
+import { useTerritoryStore } from '@/stores/territoryStore'
 import { useLobbySync } from '@/composables/useLobbySync'
 
 const route = useRoute()
 const router = useRouter()
 const lobbyStore = useLobbyStore()
+const territoryStore = useTerritoryStore()
+
+// Territory selection state
+const showTerritorySelection = ref(false)
 
 // Room state from route and store
 const roomCode = computed(() => (route.params.roomCode as string).toUpperCase())
@@ -50,6 +57,14 @@ function handleLeave() {
   // WebSocket cleanup is handled by useLobbySync onBeforeUnmount
   router.push('/')
 }
+
+function toggleTerritorySelection() {
+  showTerritorySelection.value = !showTerritorySelection.value
+}
+
+// Computed for territory selection status
+const hasSelectedTerritory = computed(() => territoryStore.selectedTerritoryId !== null)
+const selectedTerritoryName = computed(() => territoryStore.selectedTerritory?.name ?? '')
 
 function copyRoomCode() {
   navigator.clipboard.writeText(roomCode.value)
@@ -209,6 +224,40 @@ const connectionStatusClass = computed(() => {
         <!-- Game Configuration Section (Story 2.4) -->
         <GameConfigCard :config="gameConfig" />
 
+        <!-- Territory Selection Section (Story 2.5) -->
+        <Card :padding="'md'" class="animate-fade-in">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <h2 class="text-lg font-semibold text-white">Selection du territoire</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                @click="toggleTerritorySelection"
+              >
+                {{ showTerritorySelection ? 'Masquer' : 'Afficher' }} la carte
+              </Button>
+            </div>
+          </template>
+
+          <!-- Selection status -->
+          <div class="mb-4">
+            <div v-if="hasSelectedTerritory" class="flex items-center gap-2 text-success">
+              <span class="text-lg">Territoire selectionne:</span>
+              <strong class="text-xl text-player-cyan">{{ selectedTerritoryName }}</strong>
+            </div>
+            <div v-else class="text-gray-400">
+              Cliquez sur un territoire disponible pour le selectionner
+            </div>
+          </div>
+
+          <!-- Territory Canvas -->
+          <Transition name="fade">
+            <div v-if="showTerritorySelection" class="flex justify-center">
+              <TerritorySelectionCanvas />
+            </div>
+          </Transition>
+        </Card>
+
         <!-- Leave Button -->
         <div class="flex justify-center">
           <Button variant="secondary" size="lg" @click="handleLeave">
@@ -242,5 +291,16 @@ const connectionStatusClass = computed(() => {
 
 .player-list-move {
   transition: transform 0.3s ease;
+}
+
+/* Fade transition for territory canvas */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

@@ -11,8 +11,16 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLobbyStore } from '@/stores/lobbyStore'
 import { useWebSocketStore } from '@/stores/websocketStore'
-import type { LobbySyncEvent, LobbyPlayerJoinedEvent, LobbyPlayerLeftEvent, WebSocketErrorEvent } from 'shared/types'
-import { LOBBY_EVENTS } from 'shared/types'
+import { useTerritoryStore } from '@/stores/territoryStore'
+import type {
+  LobbySyncEvent,
+  LobbyPlayerJoinedEvent,
+  LobbyPlayerLeftEvent,
+  WebSocketErrorEvent,
+  TerritorySelectedEvent,
+  TerritoryReleasedEvent
+} from 'shared/types'
+import { LOBBY_EVENTS, TERRITORY_EVENTS } from 'shared/types'
 
 const WS_URL = `${import.meta.env.VITE_WS_URL || 'ws://localhost:3000'}/ws`
 
@@ -20,6 +28,7 @@ export function useLobbySync(roomCode: string, playerId: string) {
   const router = useRouter()
   const lobbyStore = useLobbyStore()
   const wsStore = useWebSocketStore()
+  const territoryStore = useTerritoryStore()
 
   const connectionError = ref<string | null>(null)
   const isJoined = ref(false)
@@ -56,6 +65,29 @@ export function useLobbySync(roomCode: string, playerId: string) {
           // Redirect on critical errors
           if (errorData.code === 'INVALID_JOIN' || errorData.code === 'ROOM_NOT_FOUND') {
             router.push({ name: 'home', query: { error: errorData.code } })
+          }
+          break
+        }
+
+        // Territory selection events
+        case TERRITORY_EVENTS.SELECTED: {
+          const selectionData = data as TerritorySelectedEvent
+          // Don't update if it's our own selection (already handled locally)
+          if (selectionData.playerId !== playerId) {
+            territoryStore.updatePlayerSelection({
+              playerId: selectionData.playerId,
+              territoryId: selectionData.territoryId,
+              color: selectionData.color
+            })
+          }
+          break
+        }
+
+        case TERRITORY_EVENTS.RELEASED: {
+          const releaseData = data as TerritoryReleasedEvent
+          // Don't update if it's our own release (already handled locally)
+          if (releaseData.playerId !== playerId) {
+            territoryStore.removePlayerSelection(releaseData.playerId, releaseData.territoryId)
           }
           break
         }

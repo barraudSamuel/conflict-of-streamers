@@ -52,7 +52,7 @@ development_status:
   2-2-join-existing-game: done
   2-3-real-time-lobby-synchronization: done
   2-4-display-game-instructions-in-lobby: done
-  2-5-territory-selection-on-grid: backlog
+  2-5-territory-selection-on-grid: done
   2-6-modify-game-configuration-before-launch: backlog
   2-7-launch-game-when-all-players-ready: backlog
   epic-2-retrospective: optional

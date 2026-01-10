@@ -4,8 +4,8 @@ import websocket from '@fastify/websocket'
 import { randomUUID } from 'crypto'
 import { ZodError } from 'zod'
 import { ValidationError, AppError, GameError, NotFoundError, UnauthorizedError } from 'shared/errors'
-import { LobbyJoinEventSchema } from 'shared/schemas'
-import { LOBBY_EVENTS } from 'shared/types'
+import { LobbyJoinEventSchema, TerritorySelectEventSchema } from 'shared/schemas'
+import { LOBBY_EVENTS, TERRITORY_EVENTS } from 'shared/types'
 import { roomRoutes } from './routes/rooms'
 import { connectionManager } from './websocket/ConnectionManager'
 import { broadcastToRoom } from './websocket/broadcast'
@@ -181,6 +181,61 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
 
         case LOBBY_EVENTS.LEAVE: {
           handleDisconnect(connectionId, 'left')
+          break
+        }
+
+        case TERRITORY_EVENTS.SELECT: {
+          // Validate territory select data
+          const parseResult = TerritorySelectEventSchema.safeParse(data)
+          if (!parseResult.success) {
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: { code: 'VALIDATION_ERROR', message: 'Invalid territory select data' }
+            }))
+            return
+          }
+
+          const { territoryId } = parseResult.data
+
+          // Get connection info
+          const connectionInfo = connectionManager.getConnection(connectionId)
+          if (!connectionInfo) {
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: { code: 'NOT_JOINED', message: 'Must join lobby first' }
+            }))
+            return
+          }
+
+          const { roomCode, playerId } = connectionInfo
+
+          // Try to select territory
+          const result = roomManager.selectTerritory(roomCode, playerId, territoryId)
+
+          if (!result.success) {
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: { code: 'TERRITORY_UNAVAILABLE', message: 'Territory is not available' }
+            }))
+            return
+          }
+
+          // If player had a previous selection, broadcast release first
+          if (result.previousTerritoryId) {
+            broadcastToRoom(roomCode, TERRITORY_EVENTS.RELEASED, {
+              playerId,
+              territoryId: result.previousTerritoryId
+            })
+          }
+
+          // Broadcast new selection to all players in room
+          broadcastToRoom(roomCode, TERRITORY_EVENTS.SELECTED, {
+            playerId,
+            territoryId,
+            color: result.playerColor
+          })
+
+          fastify.log.info({ connectionId, roomCode, playerId, territoryId }, 'Territory selected')
           break
         }
 

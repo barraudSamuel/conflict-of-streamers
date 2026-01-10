@@ -15,6 +15,11 @@ export const LobbyJoinEventSchema = z.object({
 // Client sends to leave lobby (explicit leave, not disconnect)
 export const LobbyLeaveEventSchema = z.object({})
 
+// Client sends to select a territory
+export const TerritorySelectEventSchema = z.object({
+  territoryId: z.string()
+})
+
 // =====================
 // Server → Client Events
 // =====================
@@ -38,6 +43,19 @@ export const LobbyPlayerLeftEventSchema = z.object({
 export const WebSocketErrorEventSchema = z.object({
   code: z.string(),
   message: z.string()
+})
+
+// Server broadcasts when a player selects a territory
+export const TerritorySelectedEventSchema = z.object({
+  playerId: z.string(),
+  territoryId: z.string(),
+  color: z.string()
+})
+
+// Server broadcasts when a player releases a territory (changes selection)
+export const TerritoryReleasedEventSchema = z.object({
+  playerId: z.string(),
+  territoryId: z.string()
 })
 
 // =====================
