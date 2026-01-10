@@ -10,9 +10,9 @@ export const BaseEntitySchema = z.object({
 })
 
 // Export all entity schemas
-export { PlayerSchema, PLAYER_COLORS } from './player'
+export { PlayerSchema, PLAYER_COLORS, BOT_TERRITORY_COLOR, GRID_LINE_COLOR, TERRITORY_BORDER_COLOR } from './player'
 export { GameSchema, GameConfigSchema, DEFAULT_GAME_CONFIG } from './game'
-export { TerritorySchema, CellSchema, TerritorySizeSchema, TerritorySelectionSchema } from './territory'
+export { TerritorySchema, CellSchema, TerritorySizeSchema, TerritorySelectionSchema, TerritoryStatsSchema } from './territory'
 export { BattleSchema, BattleStatsSchema } from './battle'
 export {
   ROOM_CODE_REGEX,
@@ -43,6 +43,8 @@ export {
   ConfigUpdatedEventSchema,
   GameStartEventSchema,
   GameStartedEventSchema,
+  GameStateInitEventSchema,
+  TerritoryUpdateEventSchema,
   TwitchErrorEventSchema,
   TwitchConnectionStatusEventSchema,
   CONFIG_LIMITS

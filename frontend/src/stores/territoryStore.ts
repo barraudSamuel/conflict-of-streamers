@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Territory, TerritorySelection } from 'shared/types'
+import type { Territory, TerritorySelection, TerritoryUpdateEvent } from 'shared/types'
 import { getInitialTerritories, findTerritoryByCell } from 'shared/data'
 
 /**
@@ -224,6 +224,98 @@ export const useTerritoryStore = defineStore('territory', () => {
     playerSelections.value = newMap
   }
 
+  // =====================
+  // Story 4.1: Game Phase Actions
+  // =====================
+
+  /**
+   * Update territory owner from WebSocket event (Story 4.1)
+   * IMMUTABLE UPDATE - required for Vue 3 reactivity
+   */
+  function updateTerritoryOwner(event: TerritoryUpdateEvent): void {
+    territories.value = territories.value.map(t =>
+      t.id === event.territoryId
+        ? { ...t, ownerId: event.newOwnerId, color: event.newColor }
+        : t
+    )
+
+    // Update player selections map if needed
+    if (event.previousOwnerId) {
+      const newMap = new Map(playerSelections.value)
+      newMap.delete(event.previousOwnerId)
+      if (event.newOwnerId) {
+        newMap.set(event.newOwnerId, event.territoryId)
+      }
+      playerSelections.value = newMap
+    } else if (event.newOwnerId) {
+      const newMap = new Map(playerSelections.value)
+      newMap.set(event.newOwnerId, event.territoryId)
+      playerSelections.value = newMap
+    }
+  }
+
+  /**
+   * Set territories from server state (Story 4.1 - game:stateInit)
+   */
+  function setTerritories(newTerritories: Territory[]): void {
+    territories.value = [...newTerritories]
+    // Rebuild player selections from territories
+    const newMap = new Map<string, string>()
+    newTerritories.forEach(t => {
+      if (t.ownerId) {
+        newMap.set(t.ownerId, t.id)
+      }
+    })
+    playerSelections.value = newMap
+  }
+
+  /**
+   * Update territory battle status (Story 4.1)
+   */
+  function setTerritoryBattleStatus(
+    territoryId: string,
+    status: { isUnderAttack?: boolean; isAttacking?: boolean }
+  ): void {
+    territories.value = territories.value.map(t =>
+      t.id === territoryId
+        ? { ...t, ...status }
+        : t
+    )
+  }
+
+  // =====================
+  // Story 4.1: Computed Getters
+  // =====================
+
+  /** Get all territories owned by a specific player */
+  const getTerritoriesByOwner = computed(() => (ownerId: string) =>
+    territories.value.filter(t => t.ownerId === ownerId)
+  )
+
+  /** Get adjacent territories for a given territory */
+  const getAdjacentTerritories = computed(() => (territoryId: string) => {
+    const territory = territories.value.find(t => t.id === territoryId)
+    if (!territory) return []
+    return territories.value.filter(t =>
+      territory.adjacentTerritoryIds.includes(t.id)
+    )
+  })
+
+  /** Get all BOT (unowned) territories */
+  const botTerritories = computed(() =>
+    territories.value.filter(t => t.ownerId === null)
+  )
+
+  /** Count territories by owner */
+  const territoryCounts = computed(() => {
+    const counts = new Map<string, number>()
+    territories.value.forEach(t => {
+      const owner = t.ownerId ?? 'BOT'
+      counts.set(owner, (counts.get(owner) ?? 0) + 1)
+    })
+    return counts
+  })
+
   return {
     // State
     territories,
@@ -240,6 +332,11 @@ export const useTerritoryStore = defineStore('territory', () => {
     getPlayerTerritory,
     findTerritoryAtCell,
     isTerritoryAvailable,
+    // Story 4.1 getters
+    getTerritoriesByOwner,
+    getAdjacentTerritories,
+    botTerritories,
+    territoryCounts,
 
     // Actions
     initializeTerritories,
@@ -250,6 +347,10 @@ export const useTerritoryStore = defineStore('territory', () => {
     clearSelection,
     updatePlayerSelection,
     removePlayerSelection,
-    removePlayerFromGame
+    removePlayerFromGame,
+    // Story 4.1 actions
+    updateTerritoryOwner,
+    setTerritories,
+    setTerritoryBattleStatus
   }
 })

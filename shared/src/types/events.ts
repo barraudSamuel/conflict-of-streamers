@@ -14,6 +14,8 @@ import {
   ConfigUpdatedEventSchema,
   GameStartEventSchema,
   GameStartedEventSchema,
+  GameStateInitEventSchema,
+  TerritoryUpdateEventSchema,
   TwitchErrorEventSchema,
   TwitchConnectionStatusEventSchema,
   CONFIG_LIMITS
@@ -44,11 +46,13 @@ export type TerritoryReleasedEvent = z.infer<typeof TerritoryReleasedEventSchema
 export type ConfigUpdatedEvent = z.infer<typeof ConfigUpdatedEventSchema>
 
 // =====================
-// Game Events (Story 2.7)
+// Game Events (Story 2.7 + Story 4.1)
 // =====================
 
 export type GameStartEvent = z.infer<typeof GameStartEventSchema>
 export type GameStartedEvent = z.infer<typeof GameStartedEventSchema>
+export type GameStateInitEvent = z.infer<typeof GameStateInitEventSchema>
+export type TerritoryUpdateEvent = z.infer<typeof TerritoryUpdateEventSchema>
 
 // =====================
 // Twitch Events (Story 3.1 + 3.4)
@@ -103,7 +107,9 @@ export const GAME_EVENTS = {
   START: 'game:start',
 
   // Server → Client
-  STARTED: 'game:started'
+  STARTED: 'game:started',
+  STATE_INIT: 'game:stateInit',
+  TERRITORY_UPDATE: 'territory:update'
 } as const
 
 export const TWITCH_EVENTS = {

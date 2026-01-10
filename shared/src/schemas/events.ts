@@ -100,7 +100,7 @@ export const ConfigUpdatedEventSchema = z.object({
 })
 
 // =====================
-// Game Events (Story 2.7)
+// Game Events (Story 2.7 + Story 4.1)
 // =====================
 
 // Client sends to start the game (creator only)
@@ -113,6 +113,35 @@ export const GameStartedEventSchema = z.object({
   startedAt: z.string().datetime(),
   players: z.array(PlayerInRoomSchema),
   config: GameConfigSchema
+})
+
+// Story 4.1: Server sends initial game state with map (after game:started)
+export const GameStateInitEventSchema = z.object({
+  territories: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    cells: z.array(z.object({ x: z.number(), y: z.number() })),
+    size: z.enum(['small', 'medium', 'large']),
+    ownerId: z.string().nullable(),
+    color: z.string().nullable(),
+    adjacentTerritoryIds: z.array(z.string()),
+    stats: z.object({
+      attackBonus: z.number(),
+      defenseBonus: z.number()
+    }).optional(),
+    isUnderAttack: z.boolean().default(false),
+    isAttacking: z.boolean().default(false)
+  })),
+  players: z.array(PlayerInRoomSchema),
+  config: GameConfigSchema
+})
+
+// Story 4.1: Server broadcasts territory ownership change
+export const TerritoryUpdateEventSchema = z.object({
+  territoryId: z.string(),
+  newOwnerId: z.string().nullable(),
+  previousOwnerId: z.string().nullable(),
+  newColor: z.string().nullable()
 })
 
 // =====================

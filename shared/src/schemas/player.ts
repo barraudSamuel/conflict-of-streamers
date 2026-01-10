@@ -6,6 +6,13 @@ export const PLAYER_COLORS = [
   '#FF00FF', '#9D4EDD', '#FF6B35', '#00FFA3'
 ] as const
 
+// BOT/neutral territory color (Story 4.1 - FR38)
+export const BOT_TERRITORY_COLOR = '#4a4a4a'
+
+// Grid rendering colors
+export const GRID_LINE_COLOR = '#1a1a1a'
+export const TERRITORY_BORDER_COLOR = '#2d2d2d'
+
 export const PlayerSchema = z.object({
   id: z.string().uuid(),
   pseudo: z.string().min(3).max(20),

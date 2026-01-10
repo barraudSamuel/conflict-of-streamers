@@ -3,11 +3,13 @@
  * Handles room creation, retrieval, player management, and TTL cleanup
  */
 
-import type { Room, CreateRoomRequest, GameConfig, Creator, PlayerInRoom, RoomState, ConfigUpdateEvent } from 'shared/types'
+import type { Room, CreateRoomRequest, GameConfig, Creator, PlayerInRoom, RoomState, ConfigUpdateEvent, Territory } from 'shared/types'
 import { GameConfigSchema, ConfigUpdateEventSchema } from 'shared/schemas'
+import { getInitialTerritories } from 'shared/data'
 import { GameError, NotFoundError } from 'shared/errors'
 import { generateRoomCode } from '../utils/codeGenerator'
 import { generateDefaultAvatar, getPlayerColor } from '../utils/avatarGenerator'
+import { getTwitchAvatar } from '../utils/twitchAvatar'
 import { logger } from '../utils/logger'
 import { randomUUID } from 'crypto'
 import { twitchManager } from './TwitchManager'
@@ -21,11 +23,17 @@ interface TerritorySelection {
   color: string
 }
 
+interface GameState {
+  territories: Territory[]
+  startedAt: string
+}
+
 interface RoomWithMeta {
   room: Room
   lastActivity: Date
   players: PlayerInRoom[]
   territorySelections: Map<string, TerritorySelection> // playerId -> selection
+  gameState: GameState | null // Only populated when game starts (Story 4.1)
 }
 
 interface CreateRoomResult {
@@ -57,7 +65,7 @@ class RoomManagerClass {
     }, 60 * 1000) // Every minute
   }
 
-  createRoom(request: CreateRoomRequest): CreateRoomResult {
+  async createRoom(request: CreateRoomRequest): Promise<CreateRoomResult> {
     // Generate unique room code
     let code = generateRoomCode()
     let attempts = 0
@@ -97,7 +105,10 @@ class RoomManagerClass {
     // Generate creator data (first player gets color index 0)
     const colorIndex = 0
     const color = getPlayerColor(colorIndex)
-    const avatarUrl = generateDefaultAvatar(request.creatorPseudo, colorIndex)
+
+    // FR5: Try to fetch Twitch avatar, fallback to default SVG if unavailable
+    const twitchAvatar = await getTwitchAvatar(request.creatorPseudo)
+    const avatarUrl = twitchAvatar ?? generateDefaultAvatar(request.creatorPseudo, colorIndex)
 
     const creator: Creator = {
       id: creatorId,
@@ -121,13 +132,14 @@ class RoomManagerClass {
       room,
       lastActivity: new Date(),
       players: [creatorPlayer],
-      territorySelections: new Map()
+      territorySelections: new Map(),
+      gameState: null
     })
 
     return { room, creator }
   }
 
-  addPlayer(roomCode: string, pseudo: string): AddPlayerResult {
+  async addPlayer(roomCode: string, pseudo: string): Promise<AddPlayerResult> {
     const normalizedCode = roomCode.toUpperCase()
     const roomData = this.rooms.get(normalizedCode)
 
@@ -154,7 +166,10 @@ class RoomManagerClass {
     // Assign color (cycle through 8 colors)
     const colorIndex = roomData.players.length
     const color = getPlayerColor(colorIndex)
-    const avatarUrl = generateDefaultAvatar(pseudo, colorIndex)
+
+    // FR5: Try to fetch Twitch avatar, fallback to default SVG if unavailable
+    const twitchAvatar = await getTwitchAvatar(pseudo)
+    const avatarUrl = twitchAvatar ?? generateDefaultAvatar(pseudo, colorIndex)
 
     const player: PlayerInRoom = {
       id: randomUUID(),
@@ -412,6 +427,26 @@ class RoomManagerClass {
     roomData.room.updatedAt = new Date().toISOString()
     roomData.lastActivity = new Date()
 
+    // Story 4.1: Initialize game state with territories
+    const territories = getInitialTerritories()
+
+    // Apply player territory selections to territories
+    for (const [pId, selection] of roomData.territorySelections) {
+      const territoryIndex = territories.findIndex(t => t.id === selection.territoryId)
+      if (territoryIndex !== -1) {
+        territories[territoryIndex] = {
+          ...territories[territoryIndex],
+          ownerId: pId,
+          color: selection.color
+        }
+      }
+    }
+
+    roomData.gameState = {
+      territories,
+      startedAt: new Date().toISOString()
+    }
+
     logger.info({ roomCode: normalizedCode, playerId, playerCount: roomData.players.length }, 'Game started')
 
     return { success: true }
@@ -467,6 +502,49 @@ class RoomManagerClass {
     logger.info({ roomCode: normalizedCode, playerId, config: roomData.room.config }, 'Game config updated')
 
     return { success: true, config: roomData.room.config }
+  }
+
+  // Story 4.1: Get game state for game:stateInit event
+  getGameState(roomCode: string): GameState | null {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+    if (!roomData || !roomData.gameState) return null
+
+    return roomData.gameState
+  }
+
+  // Story 4.1: Update a territory's ownership (for territory:update events)
+  updateTerritoryOwner(
+    roomCode: string,
+    territoryId: string,
+    newOwnerId: string | null,
+    newColor: string | null
+  ): { success: boolean; previousOwnerId: string | null } {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+
+    if (!roomData || !roomData.gameState) {
+      return { success: false, previousOwnerId: null }
+    }
+
+    const territoryIndex = roomData.gameState.territories.findIndex(t => t.id === territoryId)
+    if (territoryIndex === -1) {
+      return { success: false, previousOwnerId: null }
+    }
+
+    const previousOwnerId = roomData.gameState.territories[territoryIndex].ownerId
+
+    // Immutable update
+    roomData.gameState.territories = roomData.gameState.territories.map((t, i) =>
+      i === territoryIndex
+        ? { ...t, ownerId: newOwnerId, color: newColor }
+        : t
+    )
+
+    roomData.lastActivity = new Date()
+    logger.info({ roomCode: normalizedCode, territoryId, previousOwnerId, newOwnerId }, 'Territory owner updated')
+
+    return { success: true, previousOwnerId }
   }
 
   private async cleanupStaleRooms(): Promise<void> {

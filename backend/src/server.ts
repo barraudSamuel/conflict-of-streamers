@@ -186,6 +186,22 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
             data: { players: roomState.players, config: roomState.config }
           }))
 
+          // Story 4.1: If game is in progress, also send game state with territories
+          const room = roomManager.getRoom(roomCode)
+          if (room && room.status === 'playing') {
+            const gameState = roomManager.getGameState(roomCode)
+            if (gameState) {
+              socket.send(JSON.stringify({
+                event: GAME_EVENTS.STATE_INIT,
+                data: {
+                  territories: gameState.territories,
+                  players: roomState.players,
+                  config: roomState.config
+                }
+              }))
+            }
+          }
+
           // Get player data for broadcast to others
           const player = roomState.players.find(p => p.id === playerId)
           if (player) {
@@ -362,6 +378,16 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
             players: roomState?.players ?? [],
             config: roomState?.config
           })
+
+          // Story 4.1: Send initial game state with territories
+          const gameState = roomManager.getGameState(roomCode)
+          if (gameState) {
+            broadcastToRoom(roomCode, GAME_EVENTS.STATE_INIT, {
+              territories: gameState.territories,
+              players: roomState?.players ?? [],
+              config: roomState?.config
+            })
+          }
 
           // Connect to creator's Twitch chat (Story 3.1)
           const creator = roomState?.players.find(p => p.isCreator)

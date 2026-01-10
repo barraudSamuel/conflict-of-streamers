@@ -1,4 +1,4 @@
-import type { Territory, Cell } from '../types'
+import type { Territory, Cell, TerritoryStats, TerritorySize } from '../types'
 
 /**
  * Predefined territories for the 20x20 game grid
@@ -17,8 +17,35 @@ function cells(...coords: [number, number][]): Cell[] {
   return coords.map(([x, y]) => ({ x, y }))
 }
 
+/**
+ * Calculate territory stats based on size (FR22 - inversely proportional)
+ * Small territories: high defense, low attack
+ * Large territories: high attack, low defense
+ */
+function calculateStats(size: TerritorySize, cellCount: number): TerritoryStats {
+  // Base multiplier based on size category
+  const sizeMultipliers: Record<TerritorySize, { attack: number; defense: number }> = {
+    small: { attack: 0.8, defense: 1.3 },
+    medium: { attack: 1.0, defense: 1.0 },
+    large: { attack: 1.3, defense: 0.8 }
+  }
+
+  const multipliers = sizeMultipliers[size]
+
+  // Fine-tune based on actual cell count (larger = slightly more attack)
+  const cellFactor = cellCount / 20 // Normalize around 20 cells
+
+  return {
+    attackBonus: Math.round(multipliers.attack * (1 + cellFactor * 0.1) * 100) / 100,
+    defenseBonus: Math.round(multipliers.defense * (1 - cellFactor * 0.05) * 100) / 100
+  }
+}
+
+// Base territory definition type (without computed fields)
+type BaseTerritoryData = Omit<Territory, 'isUnderAttack' | 'isAttacking' | 'stats'>
+
 // Base territory data covering the entire 20x20 grid (400 cells)
-export const TERRITORY_DATA: Territory[] = [
+const BASE_TERRITORY_DATA: BaseTerritoryData[] = [
   // === ROW 0-4: NORTHERN TERRITORIES ===
 
   // T1 - Glacier (large - 20 cells) - Top left
@@ -366,6 +393,16 @@ export const TERRITORY_DATA: Territory[] = [
 ]
 
 /**
+ * Build full Territory data with computed stats
+ */
+export const TERRITORY_DATA: Territory[] = BASE_TERRITORY_DATA.map(t => ({
+  ...t,
+  isUnderAttack: false,
+  isAttacking: false,
+  stats: calculateStats(t.size, t.cells.length)
+}))
+
+/**
  * Get a fresh copy of all territories (for initializing a new game)
  * All territories start unowned with neutral color
  */
@@ -373,7 +410,9 @@ export function getInitialTerritories(): Territory[] {
   return TERRITORY_DATA.map(t => ({
     ...t,
     ownerId: null,
-    color: null
+    color: null,
+    isUnderAttack: false,
+    isAttacking: false
   }))
 }
 

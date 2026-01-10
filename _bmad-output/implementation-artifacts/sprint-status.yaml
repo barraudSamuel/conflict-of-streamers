@@ -62,11 +62,11 @@ development_status:
   3-2-parse-and-count-valid-chat-commands: done
   3-3-identify-unique-twitch-users: done
   3-4-automatic-irc-reconnection: done
-  3-5-fetch-twitch-avatar-automatically: backlog
+  3-5-fetch-twitch-avatar-automatically: done
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-render-game-map-with-canvas-2d: backlog
+  epic-4: in-progress
+  4-1-render-game-map-with-canvas-2d: done
   4-2-initiate-attack-on-adjacent-territory: backlog
   4-3-defend-territory-when-attacked: backlog
   4-4-implement-dual-counting-system-for-real-time-feedback: backlog

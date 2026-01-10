@@ -11,7 +11,7 @@ export interface BaseEntity {
 // Export all entity types
 export type { Player } from './player'
 export type { Game, GameConfig } from './game'
-export type { Territory, Cell, TerritorySize, TerritorySelection } from './territory'
+export type { Territory, Cell, TerritorySize, TerritorySelection, TerritoryStats } from './territory'
 export type { Battle, BattleStats } from './battle'
 export type {
   CreateRoomRequest,
@@ -44,6 +44,8 @@ export type {
   ConfigEventName,
   GameStartEvent,
   GameStartedEvent,
+  GameStateInitEvent,
+  TerritoryUpdateEvent,
   GameEventName,
   TwitchErrorEvent,
   TwitchConnectionStatusEvent,

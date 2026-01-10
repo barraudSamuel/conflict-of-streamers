@@ -34,8 +34,8 @@ export async function roomRoutes(
 
     fastify.log.info({ pseudo: validated.creatorPseudo }, 'Creating new room')
 
-    // Create room
-    const { room, creator } = roomManager.createRoom(validated)
+    // Create room (async for Twitch avatar fetch - FR5)
+    const { room, creator } = await roomManager.createRoom(validated)
 
     fastify.log.info(
       { roomCode: room.code, roomId: room.id, creatorId: creator.id },
@@ -66,8 +66,8 @@ export async function roomRoutes(
 
     fastify.log.info({ roomCode: code, pseudo: validated.pseudo }, 'Player joining room')
 
-    // Add player to room (throws NotFoundError, GameError on failure)
-    const { player, roomState } = roomManager.addPlayer(code, validated.pseudo)
+    // Add player to room (async for Twitch avatar fetch - FR5)
+    const { player, roomState } = await roomManager.addPlayer(code, validated.pseudo)
 
     fastify.log.info(
       { roomCode: code, playerId: player.id, pseudo: validated.pseudo, playerCount: roomState.players.length },
