@@ -3,6 +3,7 @@
  * Story 1.4 - AR12 Vue Router 4 en mode history
  * Story 2.1 - Added lobby route with validation guard
  * Story 2.2 - Enhanced lobby guard for joiners
+ * Story 2.7 - Added game route for active game view
  */
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
@@ -62,6 +63,24 @@ const routes: RouteRecordRaw[] = [
       } catch {
         return { name: 'home', query: { error: 'connection-error' } }
       }
+    }
+  },
+  {
+    path: '/game/:roomCode',
+    name: 'game',
+    component: lazyLoad(() => import('@/views/GameView.vue')),
+    beforeEnter: (to) => {
+      const roomCode = to.params.roomCode as string
+      const lobbyStore = useLobbyStore()
+
+      // Only allow access if user was in the lobby for this room
+      // (navigation happens via game:started event, not direct URL)
+      if (lobbyStore.isInLobby && lobbyStore.roomCode.toLowerCase() === roomCode.toLowerCase()) {
+        return true
+      }
+
+      // Direct URL access - redirect to home
+      return { name: 'home', query: { error: 'game-not-joined' } }
     }
   },
   {

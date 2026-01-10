@@ -12,6 +12,9 @@ import {
   TerritoryReleasedEventSchema,
   ConfigUpdateEventSchema,
   ConfigUpdatedEventSchema,
+  GameStartEventSchema,
+  GameStartedEventSchema,
+  TwitchErrorEventSchema,
   CONFIG_LIMITS
 } from '../schemas/events'
 
@@ -38,6 +41,19 @@ export type WebSocketErrorEvent = z.infer<typeof WebSocketErrorEventSchema>
 export type TerritorySelectedEvent = z.infer<typeof TerritorySelectedEventSchema>
 export type TerritoryReleasedEvent = z.infer<typeof TerritoryReleasedEventSchema>
 export type ConfigUpdatedEvent = z.infer<typeof ConfigUpdatedEventSchema>
+
+// =====================
+// Game Events (Story 2.7)
+// =====================
+
+export type GameStartEvent = z.infer<typeof GameStartEventSchema>
+export type GameStartedEvent = z.infer<typeof GameStartedEventSchema>
+
+// =====================
+// Twitch Events (Story 3.1)
+// =====================
+
+export type TwitchErrorEvent = z.infer<typeof TwitchErrorEventSchema>
 
 // =====================
 // WebSocket Message Wrapper
@@ -80,6 +96,21 @@ export const CONFIG_EVENTS = {
   UPDATED: 'config:updated'
 } as const
 
+export const GAME_EVENTS = {
+  // Client → Server
+  START: 'game:start',
+
+  // Server → Client
+  STARTED: 'game:started'
+} as const
+
+export const TWITCH_EVENTS = {
+  // Server → Client (Story 3.1)
+  ERROR: 'twitch:error'
+} as const
+
 export type LobbyEventName = (typeof LOBBY_EVENTS)[keyof typeof LOBBY_EVENTS]
 export type TerritoryEventName = (typeof TERRITORY_EVENTS)[keyof typeof TERRITORY_EVENTS]
 export type ConfigEventName = (typeof CONFIG_EVENTS)[keyof typeof CONFIG_EVENTS]
+export type GameEventName = (typeof GAME_EVENTS)[keyof typeof GAME_EVENTS]
+export type TwitchEventName = (typeof TWITCH_EVENTS)[keyof typeof TWITCH_EVENTS]

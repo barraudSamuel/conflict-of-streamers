@@ -19,9 +19,10 @@ import type {
   WebSocketErrorEvent,
   TerritorySelectedEvent,
   TerritoryReleasedEvent,
-  ConfigUpdatedEvent
+  ConfigUpdatedEvent,
+  GameStartedEvent
 } from 'shared/types'
-import { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS } from 'shared/types'
+import { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS } from 'shared/types'
 import { DEFAULT_GAME_CONFIG } from 'shared/schemas'
 
 const WS_URL = `${import.meta.env.VITE_WS_URL || 'ws://localhost:3000'}/ws`
@@ -64,6 +65,9 @@ export function useLobbySync(roomCode: string, playerId: string) {
           const errorData = data as WebSocketErrorEvent
           connectionError.value = errorData.message
 
+          // Set error in lobbyStore for components to react (e.g., reset loading states)
+          lobbyStore.setError(errorData.code, errorData.message)
+
           // Redirect on critical errors
           if (errorData.code === 'INVALID_JOIN' || errorData.code === 'ROOM_NOT_FOUND') {
             router.push({ name: 'home', query: { error: errorData.code } })
@@ -104,6 +108,14 @@ export function useLobbySync(roomCode: string, playerId: string) {
             forceMultiplier: lobbyStore.config?.forceMultiplier ?? DEFAULT_GAME_CONFIG.forceMultiplier,
             territoryBonusRange: lobbyStore.config?.territoryBonusRange ?? [...DEFAULT_GAME_CONFIG.territoryBonusRange]
           })
+          break
+        }
+
+        // Game start event (Story 2.7)
+        case GAME_EVENTS.STARTED: {
+          const gameData = data as GameStartedEvent
+          // Navigate all clients to game view
+          router.push(`/game/${gameData.roomCode}`)
           break
         }
       }

@@ -41,5 +41,8 @@ export {
   TerritoryReleasedEventSchema,
   ConfigUpdateEventSchema,
   ConfigUpdatedEventSchema,
+  GameStartEventSchema,
+  GameStartedEventSchema,
+  TwitchErrorEventSchema,
   CONFIG_LIMITS
 } from './events'

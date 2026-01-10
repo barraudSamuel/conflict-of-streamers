@@ -47,19 +47,19 @@ development_status:
   1-4-create-home-page-with-tutorial: done
   epic-1-retrospective: optional
 
-  epic-2: in-progress
+  epic-2: done
   2-1-create-game-with-configuration: done
   2-2-join-existing-game: done
   2-3-real-time-lobby-synchronization: done
   2-4-display-game-instructions-in-lobby: done
   2-5-territory-selection-on-grid: done
   2-6-modify-game-configuration-before-launch: done
-  2-7-launch-game-when-all-players-ready: backlog
+  2-7-launch-game-when-all-players-ready: done
   epic-2-retrospective: optional
 
-  epic-3: backlog
-  3-1-connect-to-twitch-chat-via-tmi-js: backlog
-  3-2-parse-and-count-valid-chat-commands: backlog
+  epic-3: in-progress
+  3-1-connect-to-twitch-chat-via-tmi-js: done
+  3-2-parse-and-count-valid-chat-commands: done
   3-3-identify-unique-twitch-users: backlog
   3-4-automatic-irc-reconnection: backlog
   3-5-fetch-twitch-avatar-automatically: backlog

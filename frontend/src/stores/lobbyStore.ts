@@ -15,6 +15,7 @@ export const useLobbyStore = defineStore('lobby', () => {
   const isInLobby = ref<boolean>(false)
   const selectedTerritoryId = ref<string | null>(null)
   const roomData = ref<RoomData | null>(null)
+  const lastError = ref<{ code: string; message: string; timestamp: number } | null>(null)
 
   // Getters
   const hasSelectedTerritory = computed(() => selectedTerritoryId.value !== null)
@@ -137,6 +138,16 @@ export const useLobbyStore = defineStore('lobby', () => {
     }
   }
 
+  // Set error state (for components to react to, e.g., reset loading state)
+  function setError(code: string, message: string) {
+    lastError.value = { code, message, timestamp: Date.now() }
+  }
+
+  // Clear error state
+  function clearError() {
+    lastError.value = null
+  }
+
   return {
     isInLobby,
     selectedTerritoryId,
@@ -163,6 +174,9 @@ export const useLobbyStore = defineStore('lobby', () => {
     selectTerritory,
     clearSelection,
     updateConfig,
-    syncConfig
+    syncConfig,
+    lastError,
+    setError,
+    clearError
   }
 })

@@ -4,12 +4,13 @@ import websocket from '@fastify/websocket'
 import { randomUUID } from 'crypto'
 import { ZodError } from 'zod'
 import { ValidationError, AppError, GameError, NotFoundError, UnauthorizedError } from 'shared/errors'
-import { LobbyJoinEventSchema, TerritorySelectEventSchema, ConfigUpdateEventSchema } from 'shared/schemas'
-import { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS } from 'shared/types'
+import { LobbyJoinEventSchema, TerritorySelectEventSchema, ConfigUpdateEventSchema, GameStartEventSchema } from 'shared/schemas'
+import { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS } from 'shared/types'
 import { roomRoutes } from './routes/rooms'
 import { connectionManager } from './websocket/ConnectionManager'
 import { broadcastToRoom } from './websocket/broadcast'
 import { roomManager } from './managers/RoomManager'
+import { twitchManager } from './managers/TwitchManager'
 
 const PORT = Number(process.env.PORT) || 3000
 const HOST = process.env.HOST || '0.0.0.0'
@@ -289,6 +290,81 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
           })
 
           fastify.log.info({ connectionId, roomCode, playerId, config: result.config }, 'Config updated')
+          break
+        }
+
+        case GAME_EVENTS.START: {
+          // Validate game start data (empty payload, just for consistency)
+          const parseResult = GameStartEventSchema.safeParse(data)
+          if (!parseResult.success) {
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: { code: 'VALIDATION_ERROR', message: 'Invalid game start data' }
+            }))
+            return
+          }
+
+          // Get connection info
+          const connectionInfo = connectionManager.getConnection(connectionId)
+          if (!connectionInfo) {
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: { code: 'NOT_JOINED', message: 'Must join lobby first' }
+            }))
+            return
+          }
+
+          const { roomCode, playerId } = connectionInfo
+
+          // Try to start game (RoomManager validates creator, status, and territory selections)
+          const result = roomManager.startGame(roomCode, playerId)
+
+          if (!result.success) {
+            const errorMessages: Record<string, string> = {
+              'ROOM_NOT_FOUND': 'Room not found',
+              'NOT_CREATOR': 'Only the creator can start the game',
+              'GAME_STARTED': 'Game has already started',
+              'NOT_ALL_READY': 'All players must select a territory before starting'
+            }
+            socket.send(JSON.stringify({
+              event: LOBBY_EVENTS.ERROR,
+              data: {
+                code: result.error ?? 'START_FAILED',
+                message: errorMessages[result.error ?? ''] ?? 'Failed to start game'
+              }
+            }))
+            return
+          }
+
+          // Get final room state for broadcast
+          const roomState = roomManager.getRoomState(roomCode)
+
+          // Broadcast game started to all players in room
+          broadcastToRoom(roomCode, GAME_EVENTS.STARTED, {
+            roomCode,
+            startedAt: new Date().toISOString(),
+            players: roomState?.players ?? [],
+            config: roomState?.config
+          })
+
+          // Connect to creator's Twitch chat (Story 3.1)
+          const creator = roomState?.players.find(p => p.isCreator)
+          if (creator) {
+            try {
+              await twitchManager.connect(roomCode, creator.pseudo)
+            } catch (error) {
+              // Log error but don't fail game start
+              fastify.log.error({ roomCode, err: error }, 'Twitch IRC connection failed')
+
+              // Notify clients of Twitch connection failure (Story 3.1)
+              broadcastToRoom(roomCode, TWITCH_EVENTS.ERROR, {
+                code: 'TWITCH_CONNECTION_FAILED',
+                message: 'Connexion au chat Twitch echouee'
+              })
+            }
+          }
+
+          fastify.log.info({ connectionId, roomCode, playerId }, 'Game started')
           break
         }
 

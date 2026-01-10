@@ -6,22 +6,26 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "fastify": "^5.6.0",
     "@fastify/cors": "^10.0.0",
     "@fastify/websocket": "^11.2.0",
-    "tmi.js": "^1.8.0",
+    "fastify": "^5.6.0",
     "pino": "^10.1.0",
     "pino-pretty": "^13.0.0",
-    "ws": "^8.18.0",
-    "shared": "file:../shared"
+    "shared": "file:../shared",
+    "tmi.js": "^1.8.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
-    "tsx": "^4.19.0",
     "@types/node": "^20.0.0",
-    "@types/ws": "^8.5.0"
+    "@types/tmi.js": "^1.8.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.0.16"
   }
 }

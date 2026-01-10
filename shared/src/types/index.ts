@@ -41,6 +41,22 @@ export type {
   TerritoryEventName,
   ConfigUpdateEvent,
   ConfigUpdatedEvent,
-  ConfigEventName
+  ConfigEventName,
+  GameStartEvent,
+  GameStartedEvent,
+  GameEventName,
+  TwitchErrorEvent,
+  TwitchEventName
 } from './events'
-export { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, CONFIG_LIMITS } from './events'
+export { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS, CONFIG_LIMITS } from './events'
+
+// Twitch integration types (Story 3.1 + 3.2)
+export type {
+  TwitchMessage,
+  TwitchConnectionStatus,
+  TwitchState,
+  CommandType,
+  ParsedCommand,
+  TwitchBattleStats,
+  CommandCallback
+} from './twitch'

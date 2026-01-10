@@ -100,6 +100,32 @@ export const ConfigUpdatedEventSchema = z.object({
 })
 
 // =====================
+// Game Events (Story 2.7)
+// =====================
+
+// Client sends to start the game (creator only)
+// No payload needed - server knows roomCode from connection
+export const GameStartEventSchema = z.object({})
+
+// Server broadcasts when game starts
+export const GameStartedEventSchema = z.object({
+  roomCode: z.string(),
+  startedAt: z.string().datetime(),
+  players: z.array(PlayerInRoomSchema),
+  config: GameConfigSchema
+})
+
+// =====================
+// Twitch Events (Story 3.1)
+// =====================
+
+// Server broadcasts when Twitch IRC connection fails
+export const TwitchErrorEventSchema = z.object({
+  code: z.enum(['TWITCH_CONNECTION_FAILED', 'TWITCH_DISCONNECTED', 'TWITCH_ERROR']),
+  message: z.string()
+})
+
+// =====================
 // WebSocket Message Wrapper
 // =====================
 

@@ -10,8 +10,10 @@ import { generateRoomCode } from '../utils/codeGenerator'
 import { generateDefaultAvatar, getPlayerColor } from '../utils/avatarGenerator'
 import { logger } from '../utils/logger'
 import { randomUUID } from 'crypto'
+import { twitchManager } from './TwitchManager'
 
 const MAX_PLAYERS = 10
+const MIN_PLAYERS = 2
 
 interface TerritorySelection {
   playerId: string
@@ -42,10 +44,17 @@ const ROOM_TTL_ACTIVE_MS = 2 * 60 * 60 * 1000 // 2 hours for rooms with players 
 class RoomManagerClass {
   private rooms = new Map<string, RoomWithMeta>()
   private cleanupInterval: ReturnType<typeof setInterval> | null = null
+  private isCleaningUp = false // Prevent concurrent cleanup runs (MEDIUM-2 fix)
 
   constructor() {
-    // Start cleanup interval
-    this.cleanupInterval = setInterval(() => this.cleanupStaleRooms(), 60 * 1000) // Every minute
+    // Start cleanup interval - handles async cleanup properly
+    this.cleanupInterval = setInterval(() => {
+      if (!this.isCleaningUp) {
+        this.cleanupStaleRooms().catch(err => {
+          logger.error({ err }, 'Error during room cleanup')
+        })
+      }
+    }, 60 * 1000) // Every minute
   }
 
   createRoom(request: CreateRoomRequest): CreateRoomResult {
@@ -332,6 +341,83 @@ class RoomManagerClass {
   }
 
   /**
+   * Check if all players have selected a territory (Story 2.7)
+   */
+  allPlayersHaveSelectedTerritory(roomCode: string): boolean {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+    if (!roomData) return false
+
+    // Every player must have a selection in territorySelections map
+    return roomData.players.every(player =>
+      roomData.territorySelections.has(player.id)
+    )
+  }
+
+  /**
+   * Get list of players who haven't selected a territory (Story 2.7)
+   */
+  getPlayersWithoutTerritory(roomCode: string): PlayerInRoom[] {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+    if (!roomData) return []
+
+    return roomData.players.filter(player =>
+      !roomData.territorySelections.has(player.id)
+    )
+  }
+
+  /**
+   * Start the game (creator only, all territories must be selected) (Story 2.7)
+   * Returns success/error with reason
+   */
+  startGame(roomCode: string, playerId: string): { success: boolean; error?: string } {
+    const normalizedCode = roomCode.toUpperCase()
+    const roomData = this.rooms.get(normalizedCode)
+
+    // Room not found
+    if (!roomData) {
+      return { success: false, error: 'ROOM_NOT_FOUND' }
+    }
+
+    // Verify player is creator
+    const player = roomData.players.find(p => p.id === playerId)
+    if (!player || !player.isCreator) {
+      logger.warn({ roomCode: normalizedCode, playerId }, 'Non-creator attempted game start')
+      return { success: false, error: 'NOT_CREATOR' }
+    }
+
+    // Verify room is in lobby status
+    if (roomData.room.status !== 'lobby') {
+      logger.warn({ roomCode: normalizedCode, status: roomData.room.status }, 'Game start rejected - already started')
+      return { success: false, error: 'GAME_STARTED' }
+    }
+
+    // Verify minimum player count (Code Review fix MEDIUM-3)
+    if (roomData.players.length < MIN_PLAYERS) {
+      logger.warn({ roomCode: normalizedCode, playerCount: roomData.players.length }, 'Game start rejected - not enough players')
+      return { success: false, error: 'NOT_ENOUGH_PLAYERS' }
+    }
+
+    // Verify all players have selected territory
+    const allReady = roomData.players.every(p => roomData.territorySelections.has(p.id))
+    if (!allReady) {
+      const missing = roomData.players.filter(p => !roomData.territorySelections.has(p.id))
+      logger.warn({ roomCode: normalizedCode, missingPlayers: missing.map(p => p.pseudo) }, 'Game start rejected - not all ready')
+      return { success: false, error: 'NOT_ALL_READY' }
+    }
+
+    // Transition room status to 'playing'
+    roomData.room.status = 'playing'
+    roomData.room.updatedAt = new Date().toISOString()
+    roomData.lastActivity = new Date()
+
+    logger.info({ roomCode: normalizedCode, playerId, playerCount: roomData.players.length }, 'Game started')
+
+    return { success: true }
+  }
+
+  /**
    * Update game configuration (creator only, lobby status only)
    * Returns updated config on success, null on failure
    */
@@ -383,27 +469,34 @@ class RoomManagerClass {
     return { success: true, config: roomData.room.config }
   }
 
-  private cleanupStaleRooms(): void {
-    const now = Date.now()
-    let cleaned = 0
+  private async cleanupStaleRooms(): Promise<void> {
+    this.isCleaningUp = true
+    try {
+      const now = Date.now()
+      let cleaned = 0
 
-    for (const [code, roomData] of this.rooms) {
-      const elapsed = now - roomData.lastActivity.getTime()
-      const hasPlayers = roomData.players.length > 0
-      const ttl = hasPlayers ? ROOM_TTL_ACTIVE_MS : ROOM_TTL_EMPTY_MS
+      for (const [code, roomData] of this.rooms) {
+        const elapsed = now - roomData.lastActivity.getTime()
+        const hasPlayers = roomData.players.length > 0
+        const ttl = hasPlayers ? ROOM_TTL_ACTIVE_MS : ROOM_TTL_EMPTY_MS
 
-      if (elapsed > ttl) {
-        logger.info(
-          { roomCode: code, elapsed: Math.round(elapsed / 1000), playerCount: roomData.players.length },
-          'Cleaning up stale room'
-        )
-        this.rooms.delete(code)
-        cleaned++
+        if (elapsed > ttl) {
+          logger.info(
+            { roomCode: code, elapsed: Math.round(elapsed / 1000), playerCount: roomData.players.length },
+            'Cleaning up stale room'
+          )
+          // Disconnect Twitch IRC before deleting room (Story 3.1)
+          await twitchManager.disconnect(code)
+          this.rooms.delete(code)
+          cleaned++
+        }
       }
-    }
 
-    if (cleaned > 0) {
-      logger.info({ cleaned, remaining: this.rooms.size }, 'Cleaned up stale rooms')
+      if (cleaned > 0) {
+        logger.info({ cleaned, remaining: this.rooms.size }, 'Cleaned up stale rooms')
+      }
+    } finally {
+      this.isCleaningUp = false
     }
   }
 

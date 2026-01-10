@@ -11,6 +11,7 @@ import { Button, Card, Container, PageLayout } from '@/components/ui'
 import InstructionsCard from '@/components/lobby/InstructionsCard.vue'
 import EditableGameConfigCard from '@/components/lobby/EditableGameConfigCard.vue'
 import TerritorySelectionCanvas from '@/components/game/TerritorySelectionCanvas.vue'
+import StartGameButton from '@/components/lobby/StartGameButton.vue'
 import { useLobbyStore } from '@/stores/lobbyStore'
 import { useTerritoryStore } from '@/stores/territoryStore'
 import { useLobbySync } from '@/composables/useLobbySync'
@@ -258,6 +259,9 @@ const connectionStatusClass = computed(() => {
             </div>
           </Transition>
         </Card>
+
+        <!-- Start Game Button (Story 2.7) - Creator only -->
+        <StartGameButton />
 
         <!-- Leave Button -->
         <div class="flex justify-center">
