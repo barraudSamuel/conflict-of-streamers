@@ -61,7 +61,7 @@ development_status:
   3-1-connect-to-twitch-chat-via-tmi-js: done
   3-2-parse-and-count-valid-chat-commands: done
   3-3-identify-unique-twitch-users: done
-  3-4-automatic-irc-reconnection: backlog
+  3-4-automatic-irc-reconnection: done
   3-5-fetch-twitch-avatar-automatically: backlog
   epic-3-retrospective: optional
 

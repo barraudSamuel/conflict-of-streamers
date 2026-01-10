@@ -15,6 +15,7 @@ import {
   GameStartEventSchema,
   GameStartedEventSchema,
   TwitchErrorEventSchema,
+  TwitchConnectionStatusEventSchema,
   CONFIG_LIMITS
 } from '../schemas/events'
 
@@ -50,10 +51,11 @@ export type GameStartEvent = z.infer<typeof GameStartEventSchema>
 export type GameStartedEvent = z.infer<typeof GameStartedEventSchema>
 
 // =====================
-// Twitch Events (Story 3.1)
+// Twitch Events (Story 3.1 + 3.4)
 // =====================
 
 export type TwitchErrorEvent = z.infer<typeof TwitchErrorEventSchema>
+export type TwitchConnectionStatusEvent = z.infer<typeof TwitchConnectionStatusEventSchema>
 
 // =====================
 // WebSocket Message Wrapper
@@ -106,7 +108,9 @@ export const GAME_EVENTS = {
 
 export const TWITCH_EVENTS = {
   // Server → Client (Story 3.1)
-  ERROR: 'twitch:error'
+  ERROR: 'twitch:error',
+  // Story 3.4: Connection status changes
+  CONNECTION_STATUS: 'twitch:connectionStatus'
 } as const
 
 export type LobbyEventName = (typeof LOBBY_EVENTS)[keyof typeof LOBBY_EVENTS]

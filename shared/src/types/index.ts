@@ -46,14 +46,16 @@ export type {
   GameStartedEvent,
   GameEventName,
   TwitchErrorEvent,
+  TwitchConnectionStatusEvent,
   TwitchEventName
 } from './events'
 export { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS, CONFIG_LIMITS } from './events'
 
-// Twitch integration types (Story 3.1 + 3.2 + 3.3)
+// Twitch integration types (Story 3.1 + 3.2 + 3.3 + 3.4)
 export type {
   TwitchMessage,
   TwitchConnectionStatus,
+  TwitchConnectionState,
   TwitchState,
   CommandType,
   ParsedCommand,

@@ -6,11 +6,27 @@ import { ZodError } from 'zod'
 import { ValidationError, AppError, GameError, NotFoundError, UnauthorizedError } from 'shared/errors'
 import { LobbyJoinEventSchema, TerritorySelectEventSchema, ConfigUpdateEventSchema, GameStartEventSchema } from 'shared/schemas'
 import { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS } from 'shared/types'
+import type { TwitchConnectionState } from 'shared/types'
 import { roomRoutes } from './routes/rooms'
 import { connectionManager } from './websocket/ConnectionManager'
 import { broadcastToRoom } from './websocket/broadcast'
 import { roomManager } from './managers/RoomManager'
 import { twitchManager } from './managers/TwitchManager'
+
+// Story 3.4: Register callback to broadcast Twitch connection status to clients
+// This notifies clients when IRC connection has been unavailable for 3+ attempts
+twitchManager.onConnectionStatusChange((roomCode: string, state: TwitchConnectionState) => {
+  // Only notify if connection has been unavailable for 3+ attempts (AC #4)
+  if (state.attemptCount >= 3) {
+    broadcastToRoom(roomCode, TWITCH_EVENTS.CONNECTION_STATUS, {
+      status: state.status,
+      channelName: state.channelName,
+      attemptCount: state.attemptCount,
+      lastError: state.lastError,
+      isTemporarilyUnavailable: true
+    })
+  }
+})
 
 const PORT = Number(process.env.PORT) || 3000
 const HOST = process.env.HOST || '0.0.0.0'

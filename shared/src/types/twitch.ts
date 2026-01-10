@@ -1,6 +1,6 @@
 /**
- * Twitch Integration Types (Story 3.1 + 3.2)
- * Types for Twitch IRC connection and message handling
+ * Twitch Integration Types (Story 3.1 + 3.2 + 3.4)
+ * Types for Twitch IRC connection, message handling, and reconnection state
  */
 
 export interface TwitchMessage {
@@ -12,7 +12,26 @@ export interface TwitchMessage {
   userId?: string
 }
 
-export type TwitchConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
+export type TwitchConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'error'
+
+/**
+ * Story 3.4: Connection state tracking for reconnection management
+ * Tracks per-room Twitch IRC connection state
+ */
+export interface TwitchConnectionState {
+  /** Current connection status */
+  status: TwitchConnectionStatus
+  /** Twitch channel name this room is connected to */
+  channelName: string
+  /** Number of reconnection attempts since last successful connection */
+  attemptCount: number
+  /** Timestamp of last reconnection attempt (ms since epoch) */
+  lastAttemptAt: number | null
+  /** Last error message if connection failed */
+  lastError: string | null
+  /** Timestamp when connection was established (ms since epoch) */
+  connectedAt: number | null
+}
 
 export interface TwitchState {
   status: TwitchConnectionStatus

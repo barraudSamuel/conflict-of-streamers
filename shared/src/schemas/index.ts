@@ -44,5 +44,6 @@ export {
   GameStartEventSchema,
   GameStartedEventSchema,
   TwitchErrorEventSchema,
+  TwitchConnectionStatusEventSchema,
   CONFIG_LIMITS
 } from './events'

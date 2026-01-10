@@ -116,13 +116,27 @@ export const GameStartedEventSchema = z.object({
 })
 
 // =====================
-// Twitch Events (Story 3.1)
+// Twitch Events (Story 3.1 + 3.4)
 // =====================
 
 // Server broadcasts when Twitch IRC connection fails
 export const TwitchErrorEventSchema = z.object({
   code: z.enum(['TWITCH_CONNECTION_FAILED', 'TWITCH_DISCONNECTED', 'TWITCH_ERROR']),
   message: z.string()
+})
+
+// Story 3.4: Server broadcasts Twitch IRC connection status changes
+export const TwitchConnectionStatusEventSchema = z.object({
+  /** Current connection status */
+  status: z.enum(['connecting', 'connected', 'disconnected', 'reconnecting', 'error']),
+  /** Twitch channel name */
+  channelName: z.string(),
+  /** Number of reconnection attempts */
+  attemptCount: z.number().int().nonnegative(),
+  /** Last error message if connection failed */
+  lastError: z.string().nullable(),
+  /** True if connection has been unavailable for 3+ attempts */
+  isTemporarilyUnavailable: z.boolean()
 })
 
 // =====================
