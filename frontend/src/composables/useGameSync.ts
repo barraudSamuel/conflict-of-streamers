@@ -18,7 +18,8 @@ import type {
   WebSocketErrorEvent,
   BattleStartEvent,
   BattleEndEvent,
-  AttackFailedEvent
+  AttackFailedEvent,
+  BattleProgressEvent
 } from 'shared/types'
 import { GAME_EVENTS, LOBBY_EVENTS, BATTLE_EVENTS } from 'shared/types'
 
@@ -79,9 +80,30 @@ export function useGameSync(roomCode: string, playerId: string) {
           break
         }
 
+        // Story 4.4: Battle progress update (real-time force values)
+        case BATTLE_EVENTS.PROGRESS: {
+          const progressData = data as BattleProgressEvent
+          battleStore.handleBattleProgress(progressData)
+          break
+        }
+
         // Story 4.2: Battle ended (cleanup active battle state)
+        // Story 4.3: Clear territory battle flags for defender
+        // Story 4.7: Territory transfer is handled via game:territoryUpdate event
         case BATTLE_EVENTS.END: {
           const endData = data as BattleEndEvent
+          // Get battle info before clearing to know which territories to update
+          const battle = battleStore.activeBattles.get(endData.battleId)
+          if (battle) {
+            // Clear battle flags from both territories
+            territoryStore.setTerritoryBattleStatus(battle.attackerTerritoryId, {
+              isAttacking: false
+            })
+            territoryStore.setTerritoryBattleStatus(battle.defenderTerritoryId, {
+              isUnderAttack: false
+            })
+          }
+          // Story 4.7: Territory transfer is handled via game:territoryUpdate event
           battleStore.handleBattleEnd(endData.battleId)
           break
         }

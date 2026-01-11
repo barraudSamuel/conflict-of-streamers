@@ -212,14 +212,39 @@ export const BattleStartEventSchema = z.object({
 })
 
 // Server broadcasts when battle ends (Story 4.7 - defined here for completeness)
+// Story 4.6: Force values validated as non-negative integers (AC: 6, FR21)
 export const BattleEndEventSchema = z.object({
   battleId: z.string(),
   winnerId: z.string().nullable(),          // Player ID of winner (null if defender was BOT)
   attackerWon: z.boolean(),
-  attackerForce: z.number(),
-  defenderForce: z.number(),
+  attackerForce: z.number().int().nonnegative(),  // Story 4.6: Must be non-negative integer
+  defenderForce: z.number().int().nonnegative(),  // Story 4.6: Must be non-negative integer
   territoryTransferred: z.boolean(),
   transferredTerritoryId: z.string().optional()
+})
+
+// Story 4.5: Feed message for real-time chat display
+export const FeedMessageSchema = z.object({
+  id: z.string(),
+  username: z.string(),
+  displayName: z.string(),
+  commandType: z.enum(['ATTACK', 'DEFEND']),
+  side: z.enum(['attacker', 'defender']),
+  timestamp: z.number()
+})
+
+// Story 4.4: Server broadcasts battle progress (real-time force updates)
+// Story 4.5: Extended with recentCommands for message feed display
+export const BattleProgressEventSchema = z.object({
+  battleId: z.string().uuid(),
+  attackerForce: z.number().min(0),
+  defenderForce: z.number().min(0),
+  attackerMessages: z.number().min(0),
+  defenderMessages: z.number().min(0),
+  attackerUniqueUsers: z.number().min(0),
+  defenderUniqueUsers: z.number().min(0),
+  // Story 4.5: Recent commands for feed display (sampled at 10-15 msg/sec)
+  recentCommands: z.array(FeedMessageSchema).optional()
 })
 
 // =====================

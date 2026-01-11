@@ -12,6 +12,13 @@ import { connectionManager } from './websocket/ConnectionManager'
 import { broadcastToRoom } from './websocket/broadcast'
 import { roomManager } from './managers/RoomManager'
 import { twitchManager } from './managers/TwitchManager'
+import { battleCounter } from './managers/BattleCounter'
+import { calculateBotDefenderForce, isBotTerritory } from './utils/botResistance'
+
+// Story 4.4: Throttled broadcast tracking
+// Limits broadcasts to max 10/sec per battle (100ms interval)
+const lastBroadcastTime = new Map<string, number>()
+const THROTTLE_INTERVAL_MS = 100
 
 // Story 3.4: Register callback to broadcast Twitch connection status to clients
 // This notifies clients when IRC connection has been unavailable for 3+ attempts
@@ -25,6 +32,44 @@ twitchManager.onConnectionStatusChange((roomCode: string, state: TwitchConnectio
       lastError: state.lastError,
       isTemporarilyUnavailable: true
     })
+  }
+})
+
+// Story 4.4 + 4.5: Register callback to count Twitch commands and broadcast battle progress
+// This wires TwitchManager parsed commands to BattleCounter for force calculation
+// Story 4.5: Extended to include recentCommands for message feed display (FR26-FR27)
+twitchManager.onCommand((roomCode, command) => {
+  // Find active battle matching the territory from the command
+  const activeBattles = roomManager.getActiveBattles(roomCode)
+
+  for (const battle of activeBattles) {
+    // Match command to battle based on territory
+    // ATTACK commands count for attacker if target territory matches
+    // DEFEND commands count for defender if target territory matches
+    if (command.territoryId === battle.defenderTerritoryId) {
+      // This command is for this battle
+      battleCounter.addCommand(battle.id, command)
+
+      // Story 4.4: Throttled broadcast of battle progress
+      const now = Date.now()
+      const lastBroadcast = lastBroadcastTime.get(battle.id) ?? 0
+
+      if (now - lastBroadcast >= THROTTLE_INTERVAL_MS) {
+        lastBroadcastTime.set(battle.id, now)
+
+        // Get current progress and broadcast
+        const progressData = battleCounter.getProgressData(battle.id)
+        if (progressData) {
+          // Story 4.5: Include recent commands for message feed display
+          const recentCommands = battleCounter.getRecentCommands(battle.id, 10)
+          broadcastToRoom(roomCode, BATTLE_EVENTS.PROGRESS, {
+            ...progressData,
+            recentCommands
+          })
+        }
+      }
+      break // Command matched to a battle, no need to check others
+    }
   }
 })
 
@@ -449,6 +494,15 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
             return
           }
 
+          // Story 4.4: Get territory bonuses for force calculation before starting battle
+          const gameState = roomManager.getGameState(roomCode)
+          const attackerTerritory = gameState?.territories.find(t => t.id === fromTerritoryId)
+          const defenderTerritory = gameState?.territories.find(t => t.id === toTerritoryId)
+
+          // Get territory bonuses (default to 1.0 if not found)
+          const attackerBonus = attackerTerritory?.stats?.attackBonus ?? 1.0
+          const defenderBonus = defenderTerritory?.stats?.defenseBonus ?? 1.0
+
           // Start battle with callback for when battle ends
           const battleEvent = roomManager.startBattle(
             roomCode,
@@ -456,38 +510,159 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
             fromTerritoryId,
             toTerritoryId,
             (endRoomCode: string, battleId: string) => {
-              // Battle end callback - will be extended in Story 4.7
+              // Story 4.4 + 4.6: Get final forces from BattleCounter before clearing
+              const startTime = Date.now()
+              const forces = battleCounter.getForces(battleId)
+              let attackerForce = forces?.attackerForce ?? 0
+              let defenderForce = forces?.defenderForce ?? 0
+
+              // Story 4.6: Apply BOT resistance if defender territory is unowned
+              const endGameState = roomManager.getGameState(endRoomCode)
+              const endBattle = roomManager.getActiveBattle(endRoomCode, battleId)
+              if (endGameState && endBattle) {
+                const defenderTerr = endGameState.territories.find(t => t.id === endBattle.defenderTerritoryId)
+                if (defenderTerr && isBotTerritory(defenderTerr.ownerId)) {
+                  // BOT territory - use calculated resistance instead of IRC counter
+                  defenderForce = calculateBotDefenderForce(
+                    defenderTerr.size,
+                    defenderTerr.stats?.defenseBonus ?? 1.0
+                  )
+                }
+              } else {
+                // Story 4.6 Code Review: Log warning if battle context unavailable
+                fastify.log.warn({
+                  battleId,
+                  roomCode: endRoomCode,
+                  hasGameState: !!endGameState,
+                  hasActiveBattle: !!endBattle
+                }, 'BOT resistance check skipped: battle context unavailable')
+              }
+
+              const attackerWon = attackerForce > defenderForce
+              const forceCalculationMs = Date.now() - startTime
+
+              // Story 4.6: Log performance (NFR3 - must be < 500ms)
+              fastify.log.debug({
+                battleId,
+                forceCalculationMs,
+                attackerForce,
+                defenderForce
+              }, 'Force calculation completed')
+
+              // Story 4.4 + 4.9: Clean up BattleCounter and throttle timer
+              battleCounter.clearBattle(battleId)
+              lastBroadcastTime.delete(battleId)
+
+              // Battle end callback
               const battle = roomManager.endBattle(endRoomCode, battleId)
               if (battle) {
-                // Broadcast battle:end event (Story 4.2 - needed for frontend state cleanup)
-                // Note: Full battle resolution with forces will be in Story 4.7
+                // Story 4.7: Territory transfer logic
+                let territoryTransferred = false
+                let transferredTerritoryId: string | undefined
+
+                if (attackerWon) {
+                  // Get attacker's color from room state
+                  const roomState = roomManager.getRoomState(endRoomCode)
+                  const attackerPlayer = roomState?.players.find(p => p.id === battle.attackerId)
+
+                  // Verify attacker is still in the room (edge case: disconnected during battle)
+                  if (attackerPlayer) {
+                    const attackerColor = attackerPlayer.color
+
+                    // Transfer territory ownership
+                    const transferResult = roomManager.updateTerritoryOwner(
+                      endRoomCode,
+                      battle.defenderTerritoryId,
+                      battle.attackerId,
+                      attackerColor
+                    )
+
+                    if (transferResult.success) {
+                      territoryTransferred = true
+                      transferredTerritoryId = battle.defenderTerritoryId
+
+                      fastify.log.info({
+                        battleId,
+                        territoryId: battle.defenderTerritoryId,
+                        previousOwnerId: transferResult.previousOwnerId,
+                        newOwnerId: battle.attackerId
+                      }, 'Territory transferred after battle victory')
+                    } else {
+                      // Story 4.7: Log transfer failure for debugging
+                      fastify.log.error({
+                        battleId,
+                        territoryId: battle.defenderTerritoryId,
+                        attackerId: battle.attackerId
+                      }, 'Territory transfer failed unexpectedly')
+                    }
+                  } else {
+                    // Attacker disconnected during battle - treat as defender win
+                    fastify.log.warn({
+                      battleId,
+                      attackerId: battle.attackerId
+                    }, 'Territory transfer skipped: attacker no longer in room')
+                  }
+                }
+
+                // Story 4.7: Start timing for NFR1 latency measurement (< 200ms)
+                const broadcastStartTime = Date.now()
+
+                // Broadcast battle:end event with real forces and transfer status (Story 4.4 + 4.7)
                 broadcastToRoom(endRoomCode, BATTLE_EVENTS.END, {
                   battleId,
-                  winnerId: null,              // Placeholder until Story 4.7
-                  attackerWon: false,          // Placeholder until Story 4.7
-                  attackerForce: 0,            // Placeholder until Story 4.7
-                  defenderForce: 0,            // Placeholder until Story 4.7
-                  territoryTransferred: false  // Placeholder until Story 4.7
+                  winnerId: attackerWon ? battle.attackerId : battle.defenderId,
+                  attackerWon,
+                  attackerForce,
+                  defenderForce,
+                  territoryTransferred,
+                  ...(transferredTerritoryId && { transferredTerritoryId })
                 })
 
                 // Get updated game state for territory status broadcast
-                const gameState = roomManager.getGameState(endRoomCode)
-                if (gameState) {
-                  // Broadcast territory updates (battle flags reset)
+                const updatedGameState = roomManager.getGameState(endRoomCode)
+                if (updatedGameState) {
+                  // Story 4.7: Broadcast territory update for transferred territory (with ownership change)
+                  if (territoryTransferred && transferredTerritoryId) {
+                    const attackerPlayer = roomManager.getPlayer(endRoomCode, battle.attackerId)
+                    broadcastToRoom(endRoomCode, GAME_EVENTS.TERRITORY_UPDATE, {
+                      territoryId: transferredTerritoryId,
+                      newOwnerId: battle.attackerId,
+                      previousOwnerId: battle.defenderId,  // null for BOT territories
+                      newColor: attackerPlayer?.color ?? null
+                    })
+                  }
+
+                  // Broadcast territory updates (battle flags reset) for attacker territory
                   broadcastToRoom(endRoomCode, GAME_EVENTS.TERRITORY_UPDATE, {
                     territoryId: battle.attackerTerritoryId,
-                    newOwnerId: gameState.territories.find(t => t.id === battle.attackerTerritoryId)?.ownerId ?? null,
+                    newOwnerId: updatedGameState.territories.find(t => t.id === battle.attackerTerritoryId)?.ownerId ?? null,
                     previousOwnerId: null,
-                    newColor: gameState.territories.find(t => t.id === battle.attackerTerritoryId)?.color ?? null
+                    newColor: updatedGameState.territories.find(t => t.id === battle.attackerTerritoryId)?.color ?? null
                   })
-                  broadcastToRoom(endRoomCode, GAME_EVENTS.TERRITORY_UPDATE, {
-                    territoryId: battle.defenderTerritoryId,
-                    newOwnerId: gameState.territories.find(t => t.id === battle.defenderTerritoryId)?.ownerId ?? null,
-                    previousOwnerId: null,
-                    newColor: gameState.territories.find(t => t.id === battle.defenderTerritoryId)?.color ?? null
-                  })
+
+                  // Only broadcast defender territory update if NOT transferred (avoid duplicate)
+                  if (!territoryTransferred) {
+                    broadcastToRoom(endRoomCode, GAME_EVENTS.TERRITORY_UPDATE, {
+                      territoryId: battle.defenderTerritoryId,
+                      newOwnerId: updatedGameState.territories.find(t => t.id === battle.defenderTerritoryId)?.ownerId ?? null,
+                      previousOwnerId: null,
+                      newColor: updatedGameState.territories.find(t => t.id === battle.defenderTerritoryId)?.color ?? null
+                    })
+                  }
                 }
-                fastify.log.info({ roomCode: endRoomCode, battleId }, 'Battle ended via timeout')
+                // Story 4.7: Log timing for NFR1 compliance (should be < 200ms)
+                const broadcastDuration = Date.now() - broadcastStartTime
+                fastify.log.info({
+                  roomCode: endRoomCode,
+                  battleId,
+                  attackerForce,
+                  defenderForce,
+                  attackerWon,
+                  territoryTransferred,
+                  transferredTerritoryId,
+                  broadcastDurationMs: broadcastDuration,
+                  nfr1Compliant: broadcastDuration < 200
+                }, 'Battle ended via timeout')
               }
             }
           )
@@ -499,6 +674,9 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
             }))
             return
           }
+
+          // Story 4.4: Initialize BattleCounter with territory bonuses
+          battleCounter.startBattle(battleEvent.battleId, attackerBonus, defenderBonus)
 
           // Broadcast battle start to all players in room
           broadcastToRoom(roomCode, BATTLE_EVENTS.START, battleEvent)

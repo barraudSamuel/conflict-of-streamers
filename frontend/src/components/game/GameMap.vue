@@ -56,6 +56,10 @@ const ATTACK_COLORS = {
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const hoveredTerritoryId = ref<string | null>(null)
 
+// Story 4.3: Animation state for pulsing battle indicators
+const pulsePhase = ref(0)
+let pulseAnimationId: number | null = null
+
 // Get 2D context
 const ctx = computed(() => {
   if (!canvasRef.value) return null
@@ -188,9 +192,11 @@ function drawTerritory(territory: Territory, isHovered: boolean): void {
       )
     }
 
-    // Story 4.2: Battle state indicators (pulsing effect simulated with solid color)
+    // Story 4.3: Battle state indicators with pulsing animation
     if (isUnderAttack) {
-      ctx.value!.fillStyle = ATTACK_COLORS.defending
+      // Calculate pulse alpha based on sine wave (0.2 to 0.6)
+      const pulseAlpha = 0.2 + Math.abs(Math.sin(pulsePhase.value)) * 0.4
+      ctx.value!.fillStyle = `rgba(255, 230, 0, ${pulseAlpha})`
       ctx.value!.fillRect(
         cell.x * CELL_SIZE + 1,
         cell.y * CELL_SIZE + 1,
@@ -200,7 +206,9 @@ function drawTerritory(territory: Territory, isHovered: boolean): void {
     }
 
     if (isAttacking) {
-      ctx.value!.fillStyle = ATTACK_COLORS.attacking
+      // Calculate pulse alpha based on sine wave (0.2 to 0.6)
+      const pulseAlpha = 0.2 + Math.abs(Math.sin(pulsePhase.value)) * 0.4
+      ctx.value!.fillStyle = `rgba(255, 59, 59, ${pulseAlpha})`
       ctx.value!.fillRect(
         cell.x * CELL_SIZE + 1,
         cell.y * CELL_SIZE + 1,
@@ -263,6 +271,7 @@ function drawTerritoryBorder(territory: Territory, isHovered: boolean): void {
 
 /**
  * Draw territory label (ID) at centroid
+ * Story 4.3: Also shows battle timer when territory is in battle
  */
 function drawTerritoryLabel(territory: Territory): void {
   if (!ctx.value) return
@@ -273,17 +282,41 @@ function drawTerritoryLabel(territory: Territory): void {
   const centroidX = (sumX / territory.cells.length) * CELL_SIZE + CELL_SIZE / 2
   const centroidY = (sumY / territory.cells.length) * CELL_SIZE + CELL_SIZE / 2
 
-  // Draw label background
-  ctx.value.fillStyle = 'rgba(0, 0, 0, 0.6)'
+  // Story 4.3: Check if territory is in battle to show timer
+  const battle = allActiveBattles.value.find(
+    b => b.attackerTerritoryId === territory.id || b.defenderTerritoryId === territory.id
+  )
+  const showTimer = battle && (territory.isAttacking || territory.isUnderAttack)
+
+  // Draw label background (taller if showing timer)
+  ctx.value.fillStyle = 'rgba(0, 0, 0, 0.7)'
   const labelWidth = territory.id.length * 6 + 6
-  ctx.value.fillRect(centroidX - labelWidth / 2, centroidY - 7, labelWidth, 14)
+  const labelHeight = showTimer ? 26 : 14
+  ctx.value.fillRect(centroidX - labelWidth / 2 - 2, centroidY - labelHeight / 2, labelWidth + 4, labelHeight)
 
   // Draw label text
   ctx.value.fillStyle = '#ffffff'
   ctx.value.font = `bold ${LABEL_FONT_SIZE}px system-ui, sans-serif`
   ctx.value.textAlign = 'center'
   ctx.value.textBaseline = 'middle'
-  ctx.value.fillText(territory.id, centroidX, centroidY)
+
+  if (showTimer && battle) {
+    // Draw territory ID above timer
+    ctx.value.fillText(territory.id, centroidX, centroidY - 6)
+
+    // Draw timer below ID
+    const seconds = Math.max(0, Math.floor(battle.remainingTime))
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    const timerText = `${mins}:${secs.toString().padStart(2, '0')}`
+
+    // Timer color: red when < 10 seconds
+    ctx.value.fillStyle = seconds <= 10 ? '#FF3B3B' : '#FFE600'
+    ctx.value.font = `bold ${LABEL_FONT_SIZE - 1}px system-ui, sans-serif`
+    ctx.value.fillText(timerText, centroidX, centroidY + 6)
+  } else {
+    ctx.value.fillText(territory.id, centroidX, centroidY)
+  }
 }
 
 /**
@@ -497,6 +530,30 @@ function handleClick(event: MouseEvent): void {
   emit('territory-click', territory.id)
 }
 
+/**
+ * Story 4.3: Start pulse animation loop when battles are active
+ */
+function startPulseAnimation(): void {
+  if (pulseAnimationId !== null) return
+
+  const animate = () => {
+    pulsePhase.value += 0.08 // Controls pulse speed
+    render()
+    pulseAnimationId = requestAnimationFrame(animate)
+  }
+  pulseAnimationId = requestAnimationFrame(animate)
+}
+
+/**
+ * Story 4.3: Stop pulse animation when no battles
+ */
+function stopPulseAnimation(): void {
+  if (pulseAnimationId !== null) {
+    cancelAnimationFrame(pulseAnimationId)
+    pulseAnimationId = null
+  }
+}
+
 // Initialize and render on mount
 onMounted(() => {
   render()
@@ -512,13 +569,24 @@ watch(
 )
 
 // Story 4.2: Re-render when battle state changes
+// Story 4.3: Start/stop pulse animation based on active battles
 watch(
   [selectedSourceTerritory, allActiveBattles],
   () => {
-    render()
+    if (allActiveBattles.value.length > 0) {
+      startPulseAnimation()
+    } else {
+      stopPulseAnimation()
+      render()
+    }
   },
   { deep: true }
 )
+
+// Story 4.3: Cleanup animation on unmount
+onUnmounted(() => {
+  stopPulseAnimation()
+})
 
 // Expose render for external calls
 defineExpose({

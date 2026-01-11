@@ -11,16 +11,19 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { Container, PageLayout, Card, Button } from '@/components/ui'
+import { Container, PageLayout, Card, Button, Overlay } from '@/components/ui'
 import GameMap from '@/components/game/GameMap.vue'
+import { BattleOverlay } from '@/components/battle'
 import { useLobbyStore } from '@/stores/lobbyStore'
 import { useTerritoryStore } from '@/stores/territoryStore'
+import { useBattleStore } from '@/stores/battleStore'
 import { useGameSync } from '@/composables/useGameSync'
 
 const route = useRoute()
 const router = useRouter()
 const lobbyStore = useLobbyStore()
 const territoryStore = useTerritoryStore()
+const battleStore = useBattleStore()
 
 // Route params
 const roomCode = computed(() => (route.params.roomCode as string).toUpperCase())
@@ -28,6 +31,9 @@ const playerId = computed(() => lobbyStore.currentPlayerId ?? '')
 
 // Territory store state
 const { territories, territoryCounts } = storeToRefs(territoryStore)
+
+// Battle store state (Story 4.3)
+const { amIInBattle, myBattle } = storeToRefs(battleStore)
 
 // Initialize game sync with WebSocket
 const { isConnected, connectionStatus, isInitialized, connectionError } = useGameSync(
@@ -81,8 +87,8 @@ const connectionStatusClass = computed(() => {
 
 // Event handlers
 function handleTerritoryClick(territoryId: string) {
-  // Attack targeting will be implemented in Story 4.2
-  console.log('Territory clicked:', territoryId)
+  // Territory click is handled in GameMap for attack flow (Story 4.2)
+  // This handler is for additional UI updates if needed
 }
 
 function handleTerritoryHover(territoryId: string | null) {
@@ -259,6 +265,11 @@ function getTerritoryOwnerName(ownerId: string | null): string {
           </div>
         </div>
       </div>
+
+      <!-- Battle Overlay (Story 4.3) -->
+      <Overlay :visible="amIInBattle" :close-on-click="false" :close-on-escape="false">
+        <BattleOverlay />
+      </Overlay>
     </Container>
   </PageLayout>
 </template>

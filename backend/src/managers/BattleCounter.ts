@@ -1,5 +1,5 @@
 /**
- * BattleCounter (Story 3.2 + 3.3)
+ * BattleCounter (Story 3.2 + 3.3 + 4.4 + 4.5)
  * Counts and tracks Twitch chat commands during battles
  *
  * Provides:
@@ -7,6 +7,8 @@
  * - Command storage for leaderboard analysis (top 5 spammers)
  * - Stats retrieval for force calculation (Story 4.6)
  * - Story 3.3: Unique user tracking for balancing formula (FR14, FR21)
+ * - Story 4.4: Force calculation with territory bonuses (AR4, FR21-FR22)
+ * - Story 4.5: Recent commands for message feed display (FR26-FR27)
  */
 
 import { logger } from '../utils/logger'
@@ -16,21 +18,41 @@ import type {
   TwitchBattleStats,
   TwitchBattleStatsSerializable,
   UserCommandStats,
-  UserSpamStats
+  UserSpamStats,
+  FeedMessage
 } from 'shared/types'
 
 /** Maximum commands stored per battle to prevent memory issues */
 const MAX_COMMANDS_PER_BATTLE = 2000
 
+/**
+ * Story 4.4: Force calculation constants
+ * Formula: Force = (messages × MESSAGE_WEIGHT) + (uniqueUsers × territoryBonus)
+ */
+const MESSAGE_WEIGHT = 0.7
+
+/**
+ * Story 4.4 + 4.5: Extended battle stats with territory bonuses and feed tracking
+ */
+interface BattleWithBonuses extends TwitchBattleStats {
+  attackerTerritoryBonus: number
+  defenderTerritoryBonus: number
+  /** Story 4.5: Index of last command sent in broadcast (for incremental feed updates) */
+  lastSentCommandIndex: number
+}
+
 class BattleCounterClass {
-  private battles = new Map<string, TwitchBattleStats>()
+  private battles = new Map<string, BattleWithBonuses>()
 
   /**
    * Initialize counter for a new battle
    * Story 3.3: Now includes unique user tracking
+   * Story 4.4: Added territory bonuses for force calculation
    * @param battleId - Unique identifier for the battle
+   * @param attackerBonus - Territory attack bonus (from territory.stats.attackBonus)
+   * @param defenderBonus - Territory defense bonus (from territory.stats.defenseBonus)
    */
-  startBattle(battleId: string): void {
+  startBattle(battleId: string, attackerBonus: number = 1.0, defenderBonus: number = 1.0): void {
     if (this.battles.has(battleId)) {
       logger.warn({ battleId }, 'Battle already exists, resetting counter')
     }
@@ -44,10 +66,15 @@ class BattleCounterClass {
       // Story 3.3: Unique user tracking
       uniqueAttackers: new Set<string>(),
       uniqueDefenders: new Set<string>(),
-      userMessageCounts: new Map<string, UserCommandStats>()
+      userMessageCounts: new Map<string, UserCommandStats>(),
+      // Story 4.4: Territory bonuses for force calculation
+      attackerTerritoryBonus: attackerBonus,
+      defenderTerritoryBonus: defenderBonus,
+      // Story 4.5: Track last sent command for incremental feed
+      lastSentCommandIndex: 0
     })
 
-    logger.info({ battleId }, 'Battle counter initialized')
+    logger.info({ battleId, attackerBonus, defenderBonus }, 'Battle counter initialized')
   }
 
   /**
@@ -244,6 +271,108 @@ class BattleCounterClass {
    */
   getActiveBattles(): string[] {
     return Array.from(this.battles.keys())
+  }
+
+  /**
+   * Story 4.4: Calculate current forces for a battle (AR4, FR21-FR22)
+   * Formula: Force = (messages × 0.7) + (uniqueUsers × territoryBonus)
+   * @param battleId - Battle to calculate forces for
+   * @returns Force values or null if battle not found
+   */
+  getForces(battleId: string): { attackerForce: number; defenderForce: number } | null {
+    const battle = this.battles.get(battleId)
+    if (!battle) return null
+
+    // Apply formula: Force = (messages × MESSAGE_WEIGHT) + (uniqueUsers × territoryBonus)
+    const attackerForce = Math.round(
+      (battle.attackCount * MESSAGE_WEIGHT) +
+      (battle.uniqueAttackers.size * battle.attackerTerritoryBonus)
+    )
+
+    const defenderForce = Math.round(
+      (battle.defendCount * MESSAGE_WEIGHT) +
+      (battle.uniqueDefenders.size * battle.defenderTerritoryBonus)
+    )
+
+    return { attackerForce, defenderForce }
+  }
+
+  /**
+   * Story 4.4: Get current progress data for broadcasting
+   * Used for battle:progress WebSocket events
+   * @param battleId - Battle to get progress for
+   * @returns Progress data or null if battle not found
+   */
+  getProgressData(battleId: string): {
+    battleId: string
+    attackerForce: number
+    defenderForce: number
+    attackerMessages: number
+    defenderMessages: number
+    attackerUniqueUsers: number
+    defenderUniqueUsers: number
+  } | null {
+    const battle = this.battles.get(battleId)
+    if (!battle) return null
+
+    const forces = this.getForces(battleId)
+    if (!forces) return null
+
+    return {
+      battleId,
+      attackerForce: forces.attackerForce,
+      defenderForce: forces.defenderForce,
+      attackerMessages: battle.attackCount,
+      defenderMessages: battle.defendCount,
+      attackerUniqueUsers: battle.uniqueAttackers.size,
+      defenderUniqueUsers: battle.uniqueDefenders.size
+    }
+  }
+
+  /**
+   * Story 4.4: Clear battle data (cleanup on battle end)
+   * @param battleId - Battle to clear
+   * @returns true if battle was cleared, false if not found
+   */
+  clearBattle(battleId: string): boolean {
+    const existed = this.battles.has(battleId)
+    if (existed) {
+      this.battles.delete(battleId)
+      logger.info({ battleId }, 'Battle counter cleared')
+    }
+    return existed
+  }
+
+  /**
+   * Story 4.5: Get recent commands for message feed display (FR26-FR27)
+   * Returns only NEW commands since last call (incremental updates)
+   * @param battleId - Battle to get commands for
+   * @param limit - Maximum number of commands to return (default 10)
+   * @returns Array of FeedMessage for frontend display
+   */
+  getRecentCommands(battleId: string, limit: number = 10): FeedMessage[] {
+    const battle = this.battles.get(battleId)
+    if (!battle) return []
+
+    // Get only new commands since last broadcast
+    const startIndex = battle.lastSentCommandIndex
+    const endIndex = battle.commands.length
+    const newCommands = battle.commands.slice(startIndex, endIndex)
+
+    // Update the last sent index
+    battle.lastSentCommandIndex = endIndex
+
+    // Take only the last `limit` commands and convert to FeedMessage format
+    const recentCommands = newCommands.slice(-limit)
+
+    return recentCommands.map((cmd, i) => ({
+      id: `${battleId}-${startIndex + i}`,
+      username: cmd.username,
+      displayName: cmd.displayName,
+      commandType: cmd.type,
+      side: cmd.type === 'ATTACK' ? 'attacker' as const : 'defender' as const,
+      timestamp: cmd.timestamp ?? Date.now()
+    }))
   }
 }
 

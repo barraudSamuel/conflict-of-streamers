@@ -18,27 +18,35 @@ function cells(...coords: [number, number][]): Cell[] {
 }
 
 /**
+ * Story 4.6: Territory stats for force calculation formula (FR22 - inversely proportional)
+ *
+ * Formula: Force = (messages × 0.7) + (uniqueUsers × territoryBonus)
+ *
+ * Small territories (3-5 cells): LOW attack bonus, HIGH defense bonus
+ *   - Hard to attack FROM (low attack power)
+ *   - Easy to DEFEND (high defense boost from unique defenders)
+ *
+ * Large territories (11+ cells): HIGH attack bonus, LOW defense bonus
+ *   - Easy to attack FROM (high attack power)
+ *   - Hard to DEFEND (low defense boost from unique defenders)
+ *
+ * This creates strategic trade-offs:
+ *   - Holding many small territories = defensive stronghold
+ *   - Holding large territories = offensive capability
+ */
+export const TERRITORY_STATS: Record<TerritorySize, { attackBonus: number; defenseBonus: number }> = {
+  small: { attackBonus: 0.7, defenseBonus: 2.2 },
+  medium: { attackBonus: 1.1, defenseBonus: 1.1 },
+  large: { attackBonus: 2.2, defenseBonus: 0.7 }
+}
+
+/**
  * Calculate territory stats based on size (FR22 - inversely proportional)
  * Small territories: high defense, low attack
  * Large territories: high attack, low defense
  */
-function calculateStats(size: TerritorySize, cellCount: number): TerritoryStats {
-  // Base multiplier based on size category
-  const sizeMultipliers: Record<TerritorySize, { attack: number; defense: number }> = {
-    small: { attack: 0.8, defense: 1.3 },
-    medium: { attack: 1.0, defense: 1.0 },
-    large: { attack: 1.3, defense: 0.8 }
-  }
-
-  const multipliers = sizeMultipliers[size]
-
-  // Fine-tune based on actual cell count (larger = slightly more attack)
-  const cellFactor = cellCount / 20 // Normalize around 20 cells
-
-  return {
-    attackBonus: Math.round(multipliers.attack * (1 + cellFactor * 0.1) * 100) / 100,
-    defenseBonus: Math.round(multipliers.defense * (1 - cellFactor * 0.05) * 100) / 100
-  }
+function calculateStats(size: TerritorySize, _cellCount: number): TerritoryStats {
+  return { ...TERRITORY_STATS[size] }
 }
 
 // Base territory definition type (without computed fields)

@@ -56,6 +56,8 @@ export type {
   AttackFailedCode,
   BattleStartEvent,
   BattleEndEvent,
+  BattleProgressEvent,  // Story 4.4
+  FeedMessage,          // Story 4.5
   BattleEventName
 } from './events'
 export { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS, BATTLE_EVENTS, CONFIG_LIMITS } from './events'

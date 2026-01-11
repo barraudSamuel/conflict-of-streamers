@@ -68,11 +68,11 @@ development_status:
   epic-4: in-progress
   4-1-render-game-map-with-canvas-2d: done
   4-2-initiate-attack-on-adjacent-territory: done
-  4-3-defend-territory-when-attacked: backlog
-  4-4-implement-dual-counting-system-for-real-time-feedback: backlog
-  4-5-display-real-time-message-feed: backlog
-  4-6-calculate-battle-force-with-balancing-formula: backlog
-  4-7-resolve-battle-and-transfer-territory: backlog
+  4-3-defend-territory-when-attacked: done
+  4-4-implement-dual-counting-system-for-real-time-feedback: done
+  4-5-display-real-time-message-feed: done
+  4-6-calculate-battle-force-with-balancing-formula: done
+  4-7-resolve-battle-and-transfer-territory: done
   4-8-display-battle-summary-with-top-5-leaderboard: backlog
   4-9-manage-bot-territories: backlog
   4-10-real-time-game-state-synchronization: backlog

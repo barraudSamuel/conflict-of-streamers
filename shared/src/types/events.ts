@@ -23,6 +23,8 @@ import {
   AttackFailedCodeSchema,
   BattleStartEventSchema,
   BattleEndEventSchema,
+  BattleProgressEventSchema,
+  FeedMessageSchema,  // Story 4.5
   CONFIG_LIMITS
 } from '../schemas/events'
 
@@ -75,6 +77,8 @@ export type AttackFailedEvent = z.infer<typeof AttackFailedEventSchema>
 export type AttackFailedCode = z.infer<typeof AttackFailedCodeSchema>
 export type BattleStartEvent = z.infer<typeof BattleStartEventSchema>
 export type BattleEndEvent = z.infer<typeof BattleEndEventSchema>
+export type BattleProgressEvent = z.infer<typeof BattleProgressEventSchema>
+export type FeedMessage = z.infer<typeof FeedMessageSchema>  // Story 4.5
 
 // =====================
 // WebSocket Message Wrapper
@@ -134,7 +138,7 @@ export const TWITCH_EVENTS = {
   CONNECTION_STATUS: 'twitch:connectionStatus'
 } as const
 
-// Story 4.2: Battle events
+// Story 4.2 + 4.4: Battle events
 export const BATTLE_EVENTS = {
   // Client → Server
   ATTACK: 'action:attack',
@@ -142,6 +146,7 @@ export const BATTLE_EVENTS = {
   // Server → Client
   ATTACK_FAILED: 'action:attackFailed',
   START: 'battle:start',
+  PROGRESS: 'battle:progress',  // Story 4.4: Real-time force updates
   END: 'battle:end'
 } as const
 
