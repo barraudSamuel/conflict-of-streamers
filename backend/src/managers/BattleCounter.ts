@@ -1,5 +1,5 @@
 /**
- * BattleCounter (Story 3.2 + 3.3 + 4.4 + 4.5)
+ * BattleCounter (Story 3.2 + 3.3 + 4.4 + 4.5 + 4.8)
  * Counts and tracks Twitch chat commands during battles
  *
  * Provides:
@@ -9,6 +9,7 @@
  * - Story 3.3: Unique user tracking for balancing formula (FR14, FR21)
  * - Story 4.4: Force calculation with territory bonuses (AR4, FR21-FR22)
  * - Story 4.5: Recent commands for message feed display (FR26-FR27)
+ * - Story 4.8: Battle summary generation for post-battle display (FR30-FR33)
  */
 
 import { logger } from '../utils/logger'
@@ -19,7 +20,10 @@ import type {
   TwitchBattleStatsSerializable,
   UserCommandStats,
   UserSpamStats,
-  FeedMessage
+  FeedMessage,
+  BattleSummary,
+  TopContributor,
+  BattleSideStats
 } from 'shared/types'
 
 /** Maximum commands stored per battle to prevent memory issues */
@@ -373,6 +377,75 @@ class BattleCounterClass {
       side: cmd.type === 'ATTACK' ? 'attacker' as const : 'defender' as const,
       timestamp: cmd.timestamp ?? Date.now()
     }))
+  }
+
+  /**
+   * Story 4.8: Generate battle summary for post-battle display (FR30-FR33)
+   * Returns top 5 contributors and stats for both sides
+   * @param battleId - Battle to generate summary for
+   * @param isDefenderBot - True if defender was a BOT (no real defender users)
+   * @returns BattleSummary object or null if battle not found
+   */
+  generateBattleSummary(battleId: string, isDefenderBot: boolean = false): BattleSummary | null {
+    const battle = this.battles.get(battleId)
+    if (!battle) {
+      logger.warn({ battleId }, 'Cannot generate summary: battle not found')
+      return null
+    }
+
+    // Build top contributors list sorted by total messages
+    const contributors: TopContributor[] = []
+    for (const [username, stats] of battle.userMessageCounts) {
+      const totalMessages = stats.attackCount + stats.defendCount
+      // Determine which side the user contributed most to
+      const side: 'attacker' | 'defender' = stats.attackCount >= stats.defendCount ? 'attacker' : 'defender'
+
+      contributors.push({
+        username,
+        displayName: stats.displayName,
+        messageCount: totalMessages,
+        side
+      })
+    }
+
+    // Sort by message count descending, take top 5
+    contributors.sort((a, b) => b.messageCount - a.messageCount)
+    const topContributors = contributors.slice(0, 5)
+
+    // Calculate attacker stats
+    const attackerStats: BattleSideStats = {
+      totalMessages: battle.attackCount,
+      uniqueUsers: battle.uniqueAttackers.size,
+      // Participation rate: for MVP, 100% if any users participated, 0% otherwise
+      // (Would need Twitch channel viewer count for real participation rate)
+      participationRate: battle.uniqueAttackers.size > 0 ? 100 : 0
+    }
+
+    // Calculate defender stats (null for BOT battles)
+    let defenderStats: BattleSideStats | null = null
+    if (!isDefenderBot) {
+      defenderStats = {
+        totalMessages: battle.defendCount,
+        uniqueUsers: battle.uniqueDefenders.size,
+        participationRate: battle.uniqueDefenders.size > 0 ? 100 : 0
+      }
+    }
+
+    const summary: BattleSummary = {
+      topContributors,
+      attackerStats,
+      defenderStats
+    }
+
+    logger.info({
+      battleId,
+      topContributorsCount: topContributors.length,
+      attackerStats,
+      defenderStats,
+      isDefenderBot
+    }, 'Battle summary generated')
+
+    return summary
   }
 }
 

@@ -58,6 +58,9 @@ export type {
   BattleEndEvent,
   BattleProgressEvent,  // Story 4.4
   FeedMessage,          // Story 4.5
+  TopContributor,       // Story 4.8
+  BattleSideStats,      // Story 4.8
+  BattleSummary,        // Story 4.8
   BattleEventName
 } from './events'
 export { LOBBY_EVENTS, TERRITORY_EVENTS, CONFIG_EVENTS, GAME_EVENTS, TWITCH_EVENTS, BATTLE_EVENTS, CONFIG_LIMITS } from './events'

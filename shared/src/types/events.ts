@@ -25,6 +25,9 @@ import {
   BattleEndEventSchema,
   BattleProgressEventSchema,
   FeedMessageSchema,  // Story 4.5
+  TopContributorSchema,  // Story 4.8
+  BattleSideStatsSchema,  // Story 4.8
+  BattleSummarySchema,  // Story 4.8
   CONFIG_LIMITS
 } from '../schemas/events'
 
@@ -79,6 +82,9 @@ export type BattleStartEvent = z.infer<typeof BattleStartEventSchema>
 export type BattleEndEvent = z.infer<typeof BattleEndEventSchema>
 export type BattleProgressEvent = z.infer<typeof BattleProgressEventSchema>
 export type FeedMessage = z.infer<typeof FeedMessageSchema>  // Story 4.5
+export type TopContributor = z.infer<typeof TopContributorSchema>  // Story 4.8
+export type BattleSideStats = z.infer<typeof BattleSideStatsSchema>  // Story 4.8
+export type BattleSummary = z.infer<typeof BattleSummarySchema>  // Story 4.8
 
 // =====================
 // WebSocket Message Wrapper

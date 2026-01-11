@@ -90,6 +90,7 @@ export function useGameSync(roomCode: string, playerId: string) {
         // Story 4.2: Battle ended (cleanup active battle state)
         // Story 4.3: Clear territory battle flags for defender
         // Story 4.7: Territory transfer is handled via game:territoryUpdate event
+        // Story 4.8: Display battle summary with top 5 spammers (FR30-FR33)
         case BATTLE_EVENTS.END: {
           const endData = data as BattleEndEvent
           // Get battle info before clearing to know which territories to update
@@ -104,7 +105,8 @@ export function useGameSync(roomCode: string, playerId: string) {
             })
           }
           // Story 4.7: Territory transfer is handled via game:territoryUpdate event
-          battleStore.handleBattleEnd(endData.battleId)
+          // Story 4.8: Handle with summary display
+          battleStore.handleBattleEndWithSummary(endData)
           break
         }
 

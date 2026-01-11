@@ -211,8 +211,31 @@ export const BattleStartEventSchema = z.object({
   })
 })
 
+// Story 4.8: Top contributor for battle summary (FR31)
+export const TopContributorSchema = z.object({
+  username: z.string(),
+  displayName: z.string(),
+  messageCount: z.number().int().nonnegative(),
+  side: z.enum(['attacker', 'defender'])
+})
+
+// Story 4.8: Stats per battle side (FR32, FR33)
+export const BattleSideStatsSchema = z.object({
+  totalMessages: z.number().int().nonnegative(),
+  uniqueUsers: z.number().int().nonnegative(),
+  participationRate: z.number().min(0).max(100) // Percentage 0-100
+})
+
+// Story 4.8: Battle summary data (FR30)
+export const BattleSummarySchema = z.object({
+  topContributors: z.array(TopContributorSchema).max(5),
+  attackerStats: BattleSideStatsSchema,
+  defenderStats: BattleSideStatsSchema.nullable() // null for BOT battles
+})
+
 // Server broadcasts when battle ends (Story 4.7 - defined here for completeness)
 // Story 4.6: Force values validated as non-negative integers (AC: 6, FR21)
+// Story 4.8: Added summary for battle statistics display
 export const BattleEndEventSchema = z.object({
   battleId: z.string(),
   winnerId: z.string().nullable(),          // Player ID of winner (null if defender was BOT)
@@ -220,7 +243,9 @@ export const BattleEndEventSchema = z.object({
   attackerForce: z.number().int().nonnegative(),  // Story 4.6: Must be non-negative integer
   defenderForce: z.number().int().nonnegative(),  // Story 4.6: Must be non-negative integer
   territoryTransferred: z.boolean(),
-  transferredTerritoryId: z.string().optional()
+  transferredTerritoryId: z.string().optional(),
+  // Story 4.8: Battle summary for top contributors and stats display
+  summary: BattleSummarySchema.optional()
 })
 
 // Story 4.5: Feed message for real-time chat display

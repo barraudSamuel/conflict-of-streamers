@@ -53,5 +53,9 @@ export {
   AttackFailedCodeSchema,
   BattleStartEventSchema,
   BattleEndEventSchema,
+  // Story 4.8: Battle summary schemas
+  TopContributorSchema,
+  BattleSideStatsSchema,
+  BattleSummarySchema,
   CONFIG_LIMITS
 } from './events'

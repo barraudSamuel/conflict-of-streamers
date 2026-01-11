@@ -549,7 +549,13 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
                 defenderForce
               }, 'Force calculation completed')
 
-              // Story 4.4 + 4.9: Clean up BattleCounter and throttle timer
+              // Story 4.8: Generate battle summary BEFORE clearing BattleCounter
+              // Need to get battle data to determine if defender is BOT
+              const pendingBattle = roomManager.getActiveBattle(endRoomCode, battleId)
+              const isDefenderBot = pendingBattle ? pendingBattle.defenderId === null : false
+              const battleSummary = battleCounter.generateBattleSummary(battleId, isDefenderBot)
+
+              // Story 4.4 + 4.9: Clean up BattleCounter and throttle timer (AFTER summary generation)
               battleCounter.clearBattle(battleId)
               lastBroadcastTime.delete(battleId)
 
@@ -607,7 +613,7 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
                 // Story 4.7: Start timing for NFR1 latency measurement (< 200ms)
                 const broadcastStartTime = Date.now()
 
-                // Broadcast battle:end event with real forces and transfer status (Story 4.4 + 4.7)
+                // Broadcast battle:end event with real forces, transfer status, and summary (Story 4.4 + 4.7 + 4.8)
                 broadcastToRoom(endRoomCode, BATTLE_EVENTS.END, {
                   battleId,
                   winnerId: attackerWon ? battle.attackerId : battle.defenderId,
@@ -615,7 +621,9 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
                   attackerForce,
                   defenderForce,
                   territoryTransferred,
-                  ...(transferredTerritoryId && { transferredTerritoryId })
+                  ...(transferredTerritoryId && { transferredTerritoryId }),
+                  // Story 4.8: Include battle summary for post-battle display (FR30-FR33)
+                  ...(battleSummary && { summary: battleSummary })
                 })
 
                 // Get updated game state for territory status broadcast
@@ -660,6 +668,9 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
                   attackerWon,
                   territoryTransferred,
                   transferredTerritoryId,
+                  // Story 4.8: Log summary stats
+                  summaryGenerated: battleSummary !== null,
+                  topContributorsCount: battleSummary?.topContributors.length ?? 0,
                   broadcastDurationMs: broadcastDuration,
                   nfr1Compliant: broadcastDuration < 200
                 }, 'Battle ended via timeout')

@@ -13,7 +13,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { Container, PageLayout, Card, Button, Overlay } from '@/components/ui'
 import GameMap from '@/components/game/GameMap.vue'
-import { BattleOverlay } from '@/components/battle'
+import { BattleOverlay, BattleSummary } from '@/components/battle'
 import { useLobbyStore } from '@/stores/lobbyStore'
 import { useTerritoryStore } from '@/stores/territoryStore'
 import { useBattleStore } from '@/stores/battleStore'
@@ -32,8 +32,8 @@ const playerId = computed(() => lobbyStore.currentPlayerId ?? '')
 // Territory store state
 const { territories, territoryCounts } = storeToRefs(territoryStore)
 
-// Battle store state (Story 4.3)
-const { amIInBattle, myBattle } = storeToRefs(battleStore)
+// Battle store state (Story 4.3 + 4.8)
+const { amIInBattle, myBattle, showBattleSummary, battleSummaryData } = storeToRefs(battleStore)
 
 // Initialize game sync with WebSocket
 const { isConnected, connectionStatus, isInitialized, connectionError } = useGameSync(
@@ -97,6 +97,11 @@ function handleTerritoryHover(territoryId: string | null) {
 
 function handleLeave() {
   router.push('/')
+}
+
+// Story 4.8: Handle battle summary close
+function handleSummaryClose() {
+  battleStore.closeBattleSummary()
 }
 
 // Get owner name for territory
@@ -270,6 +275,20 @@ function getTerritoryOwnerName(ownerId: string | null): string {
       <Overlay :visible="amIInBattle" :close-on-click="false" :close-on-escape="false">
         <BattleOverlay />
       </Overlay>
+
+      <!-- Battle Summary Modal (Story 4.8) -->
+      <BattleSummary
+        v-if="showBattleSummary && battleSummaryData"
+        :attacker-won="battleSummaryData.attackerWon"
+        :territory-transferred="battleSummaryData.territoryTransferred"
+        :transferred-territory-id="battleSummaryData.transferredTerritoryId"
+        :summary="battleSummaryData.summary"
+        :attacker-force="battleSummaryData.attackerForce"
+        :defender-force="battleSummaryData.defenderForce"
+        :is-defender-bot="battleSummaryData.isDefenderBot"
+        :current-username="currentPlayer?.pseudo"
+        @close="handleSummaryClose"
+      />
     </Container>
   </PageLayout>
 </template>

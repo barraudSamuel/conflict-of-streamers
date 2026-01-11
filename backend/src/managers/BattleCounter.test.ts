@@ -1055,4 +1055,185 @@ describe('BattleCounter', () => {
       })
     })
   })
+
+  // Story 4.8: Battle Summary Generation tests
+  describe('Story 4.8: generateBattleSummary (FR30-FR33)', () => {
+    describe('returns null for non-existent battle', () => {
+      it('returns null when battle does not exist', () => {
+        const summary = battleCounter.generateBattleSummary('non-existent')
+        expect(summary).toBeNull()
+      })
+    })
+
+    describe('generates correct top 5 sorted by message count', () => {
+      it('returns top 5 contributors sorted by total messages descending', () => {
+        battleCounter.startBattle(battleId)
+
+        // user1: 5 messages, user2: 3 messages, user3: 7 messages, user4: 2 messages, user5: 4 messages, user6: 1 message
+        for (let i = 0; i < 5; i++) battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        for (let i = 0; i < 3; i++) battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user2'))
+        for (let i = 0; i < 7; i++) battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user3'))
+        for (let i = 0; i < 2; i++) battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'user4'))
+        for (let i = 0; i < 4; i++) battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'user5'))
+        for (let i = 0; i < 1; i++) battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user6'))
+
+        const summary = battleCounter.generateBattleSummary(battleId)
+
+        expect(summary).not.toBeNull()
+        expect(summary!.topContributors).toHaveLength(5)
+
+        // Should be sorted: user3 (7), user1 (5), user5 (4), user2 (3), user4 (2)
+        expect(summary!.topContributors[0].username).toBe('user3')
+        expect(summary!.topContributors[0].messageCount).toBe(7)
+        expect(summary!.topContributors[1].username).toBe('user1')
+        expect(summary!.topContributors[1].messageCount).toBe(5)
+        expect(summary!.topContributors[2].username).toBe('user5')
+        expect(summary!.topContributors[2].messageCount).toBe(4)
+        expect(summary!.topContributors[3].username).toBe('user2')
+        expect(summary!.topContributors[3].messageCount).toBe(3)
+        expect(summary!.topContributors[4].username).toBe('user4')
+        expect(summary!.topContributors[4].messageCount).toBe(2)
+
+        // user6 should NOT be in top 5
+        expect(summary!.topContributors.find(c => c.username === 'user6')).toBeUndefined()
+
+        battleCounter.endBattle(battleId)
+      })
+
+      it('returns fewer than 5 if less than 5 participants', () => {
+        battleCounter.startBattle(battleId)
+
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user2'))
+
+        const summary = battleCounter.generateBattleSummary(battleId)
+
+        expect(summary!.topContributors).toHaveLength(2)
+
+        battleCounter.endBattle(battleId)
+      })
+    })
+
+    describe('calculates stats correctly per side', () => {
+      it('calculates attackerStats correctly', () => {
+        battleCounter.startBattle(battleId)
+
+        // 5 attack messages from 3 unique users
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'a1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'a2'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'a3'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'a1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'a2'))
+
+        const summary = battleCounter.generateBattleSummary(battleId)
+
+        expect(summary!.attackerStats.totalMessages).toBe(5)
+        expect(summary!.attackerStats.uniqueUsers).toBe(3)
+        expect(summary!.attackerStats.participationRate).toBe(100)
+
+        battleCounter.endBattle(battleId)
+      })
+
+      it('calculates defenderStats correctly when not BOT', () => {
+        battleCounter.startBattle(battleId)
+
+        // 3 defend messages from 2 unique users
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'd1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'd2'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'd1'))
+
+        const summary = battleCounter.generateBattleSummary(battleId, false) // not BOT
+
+        expect(summary!.defenderStats).not.toBeNull()
+        expect(summary!.defenderStats!.totalMessages).toBe(3)
+        expect(summary!.defenderStats!.uniqueUsers).toBe(2)
+        expect(summary!.defenderStats!.participationRate).toBe(100)
+
+        battleCounter.endBattle(battleId)
+      })
+    })
+
+    describe('handles BOT battle (defenderStats = null)', () => {
+      it('returns null defenderStats when isDefenderBot is true', () => {
+        battleCounter.startBattle(battleId)
+
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+
+        const summary = battleCounter.generateBattleSummary(battleId, true) // BOT battle
+
+        expect(summary!.defenderStats).toBeNull()
+        expect(summary!.attackerStats).not.toBeNull()
+
+        battleCounter.endBattle(battleId)
+      })
+    })
+
+    describe('handles zero participation', () => {
+      it('returns empty topContributors when no messages', () => {
+        battleCounter.startBattle(battleId)
+
+        // No commands added
+
+        const summary = battleCounter.generateBattleSummary(battleId)
+
+        expect(summary!.topContributors).toHaveLength(0)
+        expect(summary!.attackerStats.totalMessages).toBe(0)
+        expect(summary!.attackerStats.uniqueUsers).toBe(0)
+        expect(summary!.attackerStats.participationRate).toBe(0)
+
+        battleCounter.endBattle(battleId)
+      })
+    })
+
+    describe('determines correct side for each contributor', () => {
+      it('assigns attacker side when user has more attack messages', () => {
+        battleCounter.startBattle(battleId)
+
+        // user1: 3 attacks, 1 defend → should be attacker
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'user1'))
+
+        const summary = battleCounter.generateBattleSummary(battleId)
+
+        expect(summary!.topContributors[0].side).toBe('attacker')
+        expect(summary!.topContributors[0].messageCount).toBe(4) // total
+
+        battleCounter.endBattle(battleId)
+      })
+
+      it('assigns defender side when user has more defend messages', () => {
+        battleCounter.startBattle(battleId)
+
+        // user1: 1 attack, 3 defends → should be defender
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'user1'))
+
+        const summary = battleCounter.generateBattleSummary(battleId)
+
+        expect(summary!.topContributors[0].side).toBe('defender')
+
+        battleCounter.endBattle(battleId)
+      })
+
+      it('assigns attacker side on tie (attackCount >= defendCount)', () => {
+        battleCounter.startBattle(battleId)
+
+        // user1: 2 attacks, 2 defends → should default to attacker
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('ATTACK', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'user1'))
+        battleCounter.addCommand(battleId, createCommand('DEFEND', 'T5', 'user1'))
+
+        const summary = battleCounter.generateBattleSummary(battleId)
+
+        expect(summary!.topContributors[0].side).toBe('attacker')
+
+        battleCounter.endBattle(battleId)
+      })
+    })
+  })
 })

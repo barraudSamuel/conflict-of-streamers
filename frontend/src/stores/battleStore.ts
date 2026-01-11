@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { useWebSocketStore } from './websocketStore'
 import { usePlayerStore } from './playerStore'
 import { useTerritoryStore } from './territoryStore'
-import type { BattleStartEvent, AttackFailedEvent, AttackActionEvent, BattleProgressEvent, FeedMessage } from 'shared/types'
+import type { BattleStartEvent, AttackFailedEvent, AttackActionEvent, BattleProgressEvent, FeedMessage, BattleEndEvent, BattleSummary } from 'shared/types'
 import { BATTLE_EVENTS } from 'shared/types'
 
 /**
@@ -22,6 +22,20 @@ interface BattleForces {
  * Story 4.5: Maximum messages to display in feed (FIFO)
  */
 const MAX_FEED_MESSAGES = 10
+
+/**
+ * Story 4.8: Battle summary data for post-battle display (FR30-FR33)
+ */
+interface BattleSummaryData {
+  battleId: string
+  attackerWon: boolean
+  attackerForce: number
+  defenderForce: number
+  territoryTransferred: boolean
+  transferredTerritoryId?: string
+  isDefenderBot: boolean
+  summary: BattleSummary
+}
 
 /**
  * Story 4.2: Active battle state for real-time battle tracking
@@ -62,6 +76,12 @@ export const useBattleStore = defineStore('battle', () => {
 
   /** Story 4.5: Feed messages for real-time chat display (FR26-FR27) */
   const feedMessages = ref<FeedMessage[]>([])
+
+  /** Story 4.8: Whether to show battle summary modal */
+  const showBattleSummary = ref(false)
+
+  /** Story 4.8: Battle summary data for display */
+  const battleSummaryData = ref<BattleSummaryData | null>(null)
 
   /** Last attack error received */
   const lastError = ref<AttackFailedEvent | null>(null)
@@ -308,6 +328,42 @@ export const useBattleStore = defineStore('battle', () => {
   }
 
   /**
+   * Story 4.8: Handle battle:end event with summary display (FR30-FR33)
+   * Stores summary data and shows modal, then cleans up battle state
+   */
+  function handleBattleEndWithSummary(event: BattleEndEvent): void {
+    // Get battle info before removing
+    const battle = activeBattles.value.get(event.battleId)
+
+    // Store summary data for display if available
+    if (event.summary) {
+      battleSummaryData.value = {
+        battleId: event.battleId,
+        attackerWon: event.attackerWon,
+        attackerForce: event.attackerForce,
+        defenderForce: event.defenderForce,
+        territoryTransferred: event.territoryTransferred,
+        transferredTerritoryId: event.transferredTerritoryId,
+        // Determine if defender was BOT based on summary data
+        isDefenderBot: event.summary.defenderStats === null,
+        summary: event.summary
+      }
+      showBattleSummary.value = true
+    }
+
+    // Clean up battle state
+    handleBattleEnd(event.battleId)
+  }
+
+  /**
+   * Story 4.8: Close battle summary modal
+   */
+  function closeBattleSummary(): void {
+    showBattleSummary.value = false
+    battleSummaryData.value = null
+  }
+
+  /**
    * Handle attack failed event from server
    */
   function handleAttackFailed(event: AttackFailedEvent): void {
@@ -342,6 +398,7 @@ export const useBattleStore = defineStore('battle', () => {
   /**
    * Reset store state (for game end or leave)
    * Story 4.5: Also clears feed messages
+   * Story 4.8: Also clears battle summary
    */
   function reset(): void {
     // Clear all battle timers
@@ -353,6 +410,8 @@ export const useBattleStore = defineStore('battle', () => {
 
     activeBattles.value = new Map()
     feedMessages.value = []  // Story 4.5
+    showBattleSummary.value = false  // Story 4.8
+    battleSummaryData.value = null  // Story 4.8
     lastError.value = null
     selectedSourceTerritory.value = null
     selectedTargetTerritory.value = null
@@ -363,6 +422,8 @@ export const useBattleStore = defineStore('battle', () => {
     // State
     activeBattles,
     feedMessages,  // Story 4.5
+    showBattleSummary,  // Story 4.8
+    battleSummaryData,  // Story 4.8
     lastError,
     selectedSourceTerritory,
     selectedTargetTerritory,
@@ -383,6 +444,8 @@ export const useBattleStore = defineStore('battle', () => {
     handleBattleStart,
     handleBattleProgress,  // Story 4.4
     handleBattleEnd,
+    handleBattleEndWithSummary,  // Story 4.8
+    closeBattleSummary,  // Story 4.8
     handleAttackFailed,
     clearError,
     setSelectedSource,
