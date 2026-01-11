@@ -74,7 +74,7 @@ development_status:
   4-6-calculate-battle-force-with-balancing-formula: done
   4-7-resolve-battle-and-transfer-territory: done
   4-8-display-battle-summary-with-top-5-leaderboard: done
-  4-9-manage-bot-territories: backlog
+  4-9-manage-bot-territories: ready-for-dev
   4-10-real-time-game-state-synchronization: backlog
   epic-4-retrospective: optional
 
